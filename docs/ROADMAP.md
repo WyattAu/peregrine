@@ -90,8 +90,13 @@ read-cursor sync, zk-Membership, FROST recovery.
 | Task | Status | Evidence | Next |
 |---|---|---|---|
 | Goals corpus triaged into catalogs | DONE | docs/goals/catalog-1..3.md | owner review |
-| Architecture + crate topology drafted | DONE | docs/ARCHITECTURE.md | decide #1-#5 |
-| Repo scaffold (Omni template, CI tier A) | PENDING | - | after name/UI decisions |
-| DST harness skeleton | PENDING | - | phase 0 |
-| matrix-sdk substrate spike | PENDING | - | phase 0 |
+| Architecture + crate topology drafted | DONE | docs/ARCHITECTURE.md | reopened decisions settled by defaults |
+| Repo scaffold (Tier A CI, Makefile, AGENTS) | DONE | commit 9067d7a; 8 tests, lint/fmt/doc green; CI on origin | keep gates green |
+| Workspace skeleton | DONE (6 of 12) | core/store/crypto/dst/ui-core/tui; phase-2+ crates created with their phases (no husk crates) | matrix-sdk spike |
+| estate.yml registration | DONE | engineering-standards 182980f; audit ratifies (pre-existing docs-witness error is another writer's) | - |
+| DST harness skeleton | DONE (seed) | peregrine-dst: SplitMix64 + Scenario + fault enum + determinism tests | partition/reorder sim of MemLog |
+| matrix-sdk substrate spike | PENDING | - | phase 0 next session |
 | Lean proof: outbox SM | PENDING | - | phase 1 |
+
+Decisions settled 2026-11-10 (defaults adopted): name `peregrine`; TUI first;
+split-engine store v1 (O_DIRECT only if budgets demand); Apache-2.0; Tier A.
