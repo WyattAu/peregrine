@@ -95,7 +95,9 @@ read-cursor sync, zk-Membership, FROST recovery.
 | Workspace skeleton | DONE (6 of 12) | core/store/crypto/dst/ui-core/tui; phase-2+ crates created with their phases (no husk crates) | matrix-sdk spike |
 | estate.yml registration | DONE | engineering-standards 182980f; audit ratifies (pre-existing docs-witness error is another writer's) | - |
 | DST harness skeleton | DONE (seed) | peregrine-dst: SplitMix64 + Scenario + fault enum + determinism tests | partition/reorder sim of MemLog |
-| matrix-sdk substrate spike | PENDING | - | phase 0 next session |
+| matrix-sdk substrate spike | DONE (code) | peregrine-core/protocol seam + adapter_matrix (0.19, rustls-aws-lc-rs); example `spike.rs`; 17 tests green; live run needs a test account from the owner | live login+sync+send vs Synapse |
+| Outbox kernel + DST integration | DONE (seed) | `protocol::Outbox` (txn-id dedup L#2, two-phase states L#4) + `dst/tests/outbox_dst.rs` (same-seed identity, reversed ACKs, partition) | WAL ring on peregrine-store |
+| cargo vet + deny | DONE | supply-chain/ bootstrap (361 exempted = audit debt); deny all-green incl. anymap2 ignore (estate precedent 8150c6e) | certify backlog over time |
 | Lean proof: outbox SM | PENDING | - | phase 1 |
 
 Decisions settled 2026-11-10 (defaults adopted): name `peregrine`; TUI first;

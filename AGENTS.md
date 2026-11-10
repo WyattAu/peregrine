@@ -68,5 +68,13 @@ ledger note).
 
 ## Supply chain
 
-`cargo vet` / `cargo deny` land with the first external dependency (the
-matrix-sdk spike). Until then the workspace is std-only by design.
+First external dependency landed (matrix-sdk 0.19, rustls/aws-lc-rs,
+memory store; E2EE + bundled sqlite in phase 1). Gates:
+
+```bash
+cargo vet        # supply-chain/ — bootstrap exemptions are recorded audit debt
+cargo deny check # advisories/bans/licenses/sources (deny.toml)
+```
+
+The `anymap2` advisory ignore mirrors estate precedent (clawdius 8150c6e);
+revisit when matrix-sdk migrates to anymap3. `Cargo.lock` is tracked.

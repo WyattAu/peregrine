@@ -7,7 +7,17 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
+[features]
+default = ["matrix-sdk"]
+# Protocol substrate behind a feature so DST-only consumers can build std-only.
+matrix-sdk = ["dep:matrix-sdk", "dep:url"]
+
 [dependencies]
+matrix-sdk = { workspace = true, optional = true }
+url = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
 
 [lints]
 workspace = true

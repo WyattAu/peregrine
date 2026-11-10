@@ -7,6 +7,10 @@
 //! (architecture: budgets as release gates, docs/GOALS.md SLO table).
 
 pub mod clock;
+pub mod protocol;
+
+#[cfg(feature = "matrix-sdk")]
+pub mod adapter_matrix;
 
 /// Crate purpose version, reported by the `peregrine` binary.
 pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");

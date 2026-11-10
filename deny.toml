@@ -5,25 +5,10 @@
 version = 2
 yanked = "deny"
 ignore = [
-    # gtk-rs GTK3 bindings unmaintained; required by wry's webkit2gtk backend
-    # on Linux (the mandated HTML viewport, ADR 0001). Tracked upstream:
-    # wry migrates to GTK4 bindings when webkit2gtk-6.0 is broadly packaged.
-    "RUSTSEC-2024-0370", # proc-macro-error (via gtk-rs chain)
-    "RUSTSEC-2024-0412", # gdk
-    "RUSTSEC-2024-0413", # atk
-    "RUSTSEC-2024-0414", # gtk
-    "RUSTSEC-2024-0415", # gtk-sys
-    "RUSTSEC-2024-0416", # atk-sys
-    "RUSTSEC-2024-0417", # gdk-sys
-    "RUSTSEC-2024-0418", # glib
-    "RUSTSEC-2024-0419", # glib-sys
-    "RUSTSEC-2024-0420", # pango
-    "RUSTSEC-2024-0436", # webkit2gtk
-    # Slint's text stack (femtovg renderer); maintained downstream by Slint.
-    "RUSTSEC-2026-0192", # ttf-parser
-    "RUSTSEC-2026-0206", # rustybuzz
-    # fxhash (via tantivy) unmaintained — hash-only usage, no security impact.
-    "RUSTSEC-2025-0057",
+    # anymap2 (unmaintained; RUSTSEC-2026-0319) via matrix-sdk 0.19 — no safe
+    # upgrade exists; estate precedent: clawdius carries the same ignore
+    # (8150c6e). Revisit when matrix-sdk migrates to anymap3.
+    "RUSTSEC-2026-0319",
 ]
 
 [licenses]
