@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/peregrine-core",
+    "crates/peregrine-store",
+    "crates/peregrine-crypto",
+    "crates/peregrine-dst",
+    "crates/peregrine-ui-core",
+    "crates/peregrine-tui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/WyattAu/peregrine"
+rust-version = "1.97.0"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+# Escapes allowed only in tests and at documented INVARIANT sites.
+unwrap_used = "deny"
+expect_used = "deny"
+await_holding_lock = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+
+[workspace.dependencies]
+peregrine-core = { path = "crates/peregrine-core", version = "0.1.0" }
+peregrine-store = { path = "crates/peregrine-store", version = "0.1.0" }
+peregrine-crypto = { path = "crates/peregrine-crypto", version = "0.1.0" }
+peregrine-dst = { path = "crates/peregrine-dst", version = "0.1.0" }
+peregrine-ui-core = { path = "crates/peregrine-ui-core", version = "0.1.0" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

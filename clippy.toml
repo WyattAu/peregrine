@@ -1,0 +1,8 @@
+# Banned APIs (AGENTS.md hard rules). Escapes require an `// INVARIANT:`
+# comment or a reviewed `#[allow]` at the audited site.
+disallowed-methods = [
+    { path = "std::time::SystemTime::now", reason = "determinism first: use peregrine_core::clock::Clock (DST contract)" },
+    { path = "std::time::Instant::now", reason = "determinism first: use peregrine_core::clock::Clock; sole sanctioned site is MonotonicClock in peregrine-core" },
+    { path = "tokio::sync::mpsc::unbounded_channel", reason = "bounded channels only: backpressure is a designed state (catalog-1 D-track)" },
+    { path = "tokio::sync::mpsc::UnboundedSender::send", reason = "bounded channels only" },
+]

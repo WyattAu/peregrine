@@ -1,0 +1,18 @@
+[package]
+name = "peregrine-tui"
+description = "Peregrine TUI frontend: the phase-1 daily driver"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "peregrine"
+path = "src/main.rs"
+
+[dependencies]
+peregrine-core = { workspace = true }
+
+[lints]
+workspace = true
