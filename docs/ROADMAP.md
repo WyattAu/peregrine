@@ -100,6 +100,9 @@ read-cursor sync, zk-Membership, FROST recovery.
 | cargo vet + deny | DONE | supply-chain/ bootstrap (361 exempted = audit debt); deny all-green incl. anymap2 ignore (estate precedent 8150c6e) | certify backlog over time |
 | Hysteresis window kernel (D2#13) | DONE (seed) | `core::window` SyncWindow: EMA velocity/position pair + margin break + deadband; 5 unit + 4 DST tests (cadence bound, settle quiet tail, same-seed identity) | wire into sliding-sync pipeline |
 | WAL outbox ring (L#4) | DONE (seed) | `store::wal` WalOutbox: fnv1a frames, torn-tail truncation, replay regenerates identical txn ids; 4 tests | dual-lane scheduler (L#1) |
+| Dual-lane scheduler (L#1) | DONE (seed) | `core::scheduler` DualLaneScheduler: realtime preempts queued bulk, abort-free in-flight registry, bulk-only progress; 4 unit + 3 DST tests | adapter dispatch wiring |
+| Sliding-sync window wiring | DONE (code) | `MatrixSession::apply_window(start,size,limit)`: builds session once, re-adds the list per Shift (0.19 selective-mode ranges); compile-checked, live-verify with test account | live spike + sync loop |
+| CI: fleet-stamped config fix | DONE | `.cargo/config.toml` untracked (mirrors kestrel); run 43030699208 green | - |
 | Lean proof: outbox SM | PENDING | - | phase 1; DST tests are the executable oracle |
 
 Decisions settled 2026-11-10 (defaults adopted): name `peregrine`; TUI first;

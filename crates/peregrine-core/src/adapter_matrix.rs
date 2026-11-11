@@ -8,7 +8,7 @@
 //! (catalog-1 D-track) after the spike proves the seam.
 
 use std::sync::{
-    Arc, Mutex,
+    Arc, Mutex, OnceLock,
     atomic::{AtomicU64, Ordering},
 };
 
@@ -16,7 +16,12 @@ use matrix_sdk::{
     Client,
     config::SyncSettings,
     ruma::events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+    sliding_sync::{SlidingSyncList, SlidingSyncMode},
 };
+
+/// Name of the main room list inside the sliding-sync session; re-adding
+/// a list with this name replaces its ranges (the window-update path).
+const SYNC_LIST: &str = "peregrine-main";
 
 use crate::protocol::{ProtocolSession, RoomId, TimelineUpdate, TxnReceipt};
 
@@ -58,6 +63,7 @@ pub struct MatrixSession {
     inbox: Arc<Mutex<Vec<RawIngest>>>,
     ingest_seq: Arc<AtomicU64>,
     send_seq: Mutex<u64>,
+    sliding: OnceLock<matrix_sdk::sliding_sync::SlidingSync>,
 }
 
 impl MatrixSession {
@@ -120,6 +126,7 @@ impl MatrixSession {
             inbox,
             ingest_seq: Arc::new(AtomicU64::new(0)),
             send_seq: Mutex::new(0),
+            sliding: OnceLock::new(),
         })
     }
 
@@ -127,6 +134,51 @@ impl MatrixSession {
     #[must_use]
     pub fn client(&self) -> &Client {
         &self.client
+    }
+
+    /// Point the sliding-sync room list at `[start, start + size)` with
+    /// `timeline_limit` events per room. First call builds the session;
+    /// later calls replace the list in place (the hysteresis window's
+    /// `Shift` action lands here - catalog-1 D-track).
+    ///
+    /// # Errors
+    ///
+    /// Fails on session build or list replacement; the substrate message
+    /// is carried in [`MatrixError`].
+    pub async fn apply_window(
+        &self,
+        start: u32,
+        size: u32,
+        timeline_limit: u32,
+    ) -> Result<(), MatrixError> {
+        let end = start.saturating_add(size.saturating_sub(1));
+        let list = SlidingSyncList::builder(SYNC_LIST)
+            .sync_mode(SlidingSyncMode::new_selective().add_range(start..=end))
+            .timeline_limit(timeline_limit);
+        if let Some(sliding) = self.sliding.get() {
+            // Window update path: same-name list replacement.
+            sliding
+                .add_list(list)
+                .await
+                .map_err(|e| err("sliding list update", e))?;
+            return Ok(());
+        }
+        let sliding = self
+            .client
+            .sliding_sync(SYNC_LIST)
+            .map_err(|e| err("sliding session", e))?
+            .build()
+            .await
+            .map_err(|e| err("sliding build", e))?;
+        sliding
+            .add_list(list)
+            .await
+            .map_err(|e| err("sliding list add", e))?;
+        // Racing builders: the loser's session is discarded; the winner
+        // carries the initial window and later shifts go through the
+        // update path above.
+        let _ = self.sliding.set(sliding);
+        Ok(())
     }
 }
 
