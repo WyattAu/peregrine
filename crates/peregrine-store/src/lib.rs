@@ -7,6 +7,8 @@
 //! E-track). The trait below is the seam the LSM engine implements in
 //! phase 1; the in-memory implementation is the DST oracle.
 
+pub mod wal;
+
 use peregrine_core::clock::Clock;
 
 /// Append-only record sequence. Monotonic per store; gaps are legal

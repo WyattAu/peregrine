@@ -98,7 +98,9 @@ read-cursor sync, zk-Membership, FROST recovery.
 | matrix-sdk substrate spike | DONE (code) | peregrine-core/protocol seam + adapter_matrix (0.19, rustls-aws-lc-rs); example `spike.rs`; 17 tests green; live run needs a test account from the owner | live login+sync+send vs Synapse |
 | Outbox kernel + DST integration | DONE (seed) | `protocol::Outbox` (txn-id dedup L#2, two-phase states L#4) + `dst/tests/outbox_dst.rs` (same-seed identity, reversed ACKs, partition) | WAL ring on peregrine-store |
 | cargo vet + deny | DONE | supply-chain/ bootstrap (361 exempted = audit debt); deny all-green incl. anymap2 ignore (estate precedent 8150c6e) | certify backlog over time |
-| Lean proof: outbox SM | PENDING | - | phase 1 |
+| Hysteresis window kernel (D2#13) | DONE (seed) | `core::window` SyncWindow: EMA velocity/position pair + margin break + deadband; 5 unit + 4 DST tests (cadence bound, settle quiet tail, same-seed identity) | wire into sliding-sync pipeline |
+| WAL outbox ring (L#4) | DONE (seed) | `store::wal` WalOutbox: fnv1a frames, torn-tail truncation, replay regenerates identical txn ids; 4 tests | dual-lane scheduler (L#1) |
+| Lean proof: outbox SM | PENDING | - | phase 1; DST tests are the executable oracle |
 
 Decisions settled 2026-11-10 (defaults adopted): name `peregrine`; TUI first;
 split-engine store v1 (O_DIRECT only if budgets demand); Apache-2.0; Tier A.

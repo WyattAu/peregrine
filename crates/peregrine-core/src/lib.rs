@@ -8,6 +8,7 @@
 
 pub mod clock;
 pub mod protocol;
+pub mod window;
 
 #[cfg(feature = "matrix-sdk")]
 pub mod adapter_matrix;
