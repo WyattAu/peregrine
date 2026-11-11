@@ -27,5 +27,8 @@ contract:
 
 ci: fmt-check lint test doc
 
+proof:
+	cd .specs/proofs && lake build
+
 clean:
 	cargo clean

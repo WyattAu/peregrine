@@ -7,3 +7,5 @@ Cargo.lock.bak
 # Fleet tooling stamps a local target-dir redirect here (mirrors kestrel's
 # untracked .cargo/config.toml); it pins absolute paths and must not ship.
 .cargo/config.toml
+# Lean proof build artifacts (lake)
+.specs/proofs/.lake/

@@ -26,6 +26,7 @@ make test             # nextest (fallback: cargo test)
 make lint             # clippy -D warnings — MUST be clean
 make fmt / fmt-check  # nightly rustfmt (imports_granularity is nightly-only)
 make doc              # broken intra-doc links fail
+make proof            # lake build of .specs/proofs (Lean mirrors of the kernels)
 make ci               # fmt-check + lint + test + doc (CI mirrors this)
 ```
 

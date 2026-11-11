@@ -64,7 +64,14 @@ async fn run() {
     let t0 = clock.now_ms();
     let session = step(
         "login",
-        MatrixSession::login(&hs, &user, &pass, "peregrine-spike").await,
+        MatrixSession::login(
+            &hs,
+            &user,
+            &pass,
+            "peregrine-spike",
+            env("PEREGRINE_STORE_PATH").as_deref(),
+        )
+        .await,
     );
     let login_ms = clock.now_ms() - t0;
     println!("login   ok  {login_ms} ms  (device {})", {

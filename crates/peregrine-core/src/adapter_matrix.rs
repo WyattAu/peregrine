@@ -68,21 +68,37 @@ pub struct MatrixSession {
 
 impl MatrixSession {
     /// Password login against `homeserver_url`; registers the timeline
-    /// ingest handler. Spike note: edits/relations are not yet normalized;
-    /// the relations quarantine (catalog-3 L#7) owns that model.
+    /// ingest handler. `store_path` selects the persistent sqlite store
+    /// (state + crypto); `None` keeps the memory store for DST-style
+    /// throwaway sessions. E2EE is compiled in: encrypted rooms are
+    /// transparently decrypted on ingest and encrypted on send by the
+    /// substrate once sessions are established.
+    ///
+    /// Spike scope note: edits/relations are not yet normalized; the
+    /// relations quarantine (catalog-3 L#7) owns that model.
     ///
     /// # Errors
     ///
-    /// Fails on URL parse, client build, or credential rejection by the
-    /// homeserver; the substrate message is carried in [`MatrixError`].
+    /// Fails on URL parse, client build, store open, or credential
+    /// rejection by the homeserver; the substrate message is carried in
+    /// [`MatrixError`].
     pub async fn login(
         homeserver_url: &str,
         user: &str,
         pass: &str,
         device_name: &str,
+        store_path: Option<&str>,
     ) -> Result<Self, MatrixError> {
         let url = url::Url::parse(homeserver_url).map_err(|e| err("homeserver url", e))?;
-        let client = Client::new(url).await.map_err(|e| err("client build", e))?;
+        let client = match store_path {
+            Some(path) => Client::builder()
+                .homeserver_url(url)
+                .sqlite_store(path, None)
+                .build()
+                .await
+                .map_err(|e| err("client build (sqlite store)", e))?,
+            None => Client::new(url).await.map_err(|e| err("client build", e))?,
+        };
         client
             .matrix_auth()
             .login_username(user, pass)

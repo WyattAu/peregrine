@@ -102,8 +102,9 @@ read-cursor sync, zk-Membership, FROST recovery.
 | WAL outbox ring (L#4) | DONE (seed) | `store::wal` WalOutbox: fnv1a frames, torn-tail truncation, replay regenerates identical txn ids; 4 tests | dual-lane scheduler (L#1) |
 | Dual-lane scheduler (L#1) | DONE (seed) | `core::scheduler` DualLaneScheduler: realtime preempts queued bulk, abort-free in-flight registry, bulk-only progress; 4 unit + 3 DST tests | adapter dispatch wiring |
 | Sliding-sync window wiring | DONE (code) | `MatrixSession::apply_window(start,size,limit)`: builds session once, re-adds the list per Shift (0.19 selective-mode ranges); compile-checked, live-verify with test account | live spike + sync loop |
+| E2EE + persistent store | DONE (code) | workspace features `e2e-encryption` + `bundled-sqlite`; `MatrixSession::login(store_path)` opens sqlite state+crypto store (None = memory); spike env `PEREGRINE_STORE_PATH`; compiles clean | live decrypt/encrypt verify needs test account |
+| Lean outbox SM | DONE (kernel) | `.specs/proofs/Proofs/Outbox.lean`: SendState lattice (acked sole fixed point, two-step termination, advance monotone) + TxnId seq injectivity/distinctness; ORACLE tags map to outbox_dst tests; `lake build` exit 0, zero sorries | key-request SM next |
 | CI: fleet-stamped config fix | DONE | `.cargo/config.toml` untracked (mirrors kestrel); run 43030699208 green | - |
-| Lean proof: outbox SM | PENDING | - | phase 1; DST tests are the executable oracle |
 
 Decisions settled 2026-11-10 (defaults adopted): name `peregrine`; TUI first;
 split-engine store v1 (O_DIRECT only if budgets demand); Apache-2.0; Tier A.
