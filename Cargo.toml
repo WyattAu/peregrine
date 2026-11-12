@@ -38,12 +38,13 @@ peregrine-dst = { path = "crates/peregrine-dst", version = "0.1.0" }
 peregrine-ui-core = { path = "crates/peregrine-ui-core", version = "0.1.0" }
 
 # Protocol substrate (phase 1): rustls (aws-lc-rs) transport, E2EE via
-# vodozemac, sqlite store vendored (bundled, no system lib). CI stays
-# hermetic. (0.19 renamed the TLS features; `rustls-aws-lc-rs` is explicit.)
+# vodozemac, SYSTEM sqlite (the bundled variant ships an affected SQLite C
+# copy: RUSTSEC-2026-0459; system-linked builds are exempt per the
+# advisory). CI installs libsqlite3-dev; kestrel pattern.
 matrix-sdk = { version = "0.19", default-features = false, features = [
     "rustls-aws-lc-rs",
     "e2e-encryption",
-    "bundled-sqlite",
+    "sqlite",
 ] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 url = "2"

@@ -9,6 +9,13 @@ ignore = [
     # upgrade exists; estate precedent: clawdius carries the same ignore
     # (8150c6e). Revisit when matrix-sdk migrates to anymap3.
     "RUSTSEC-2026-0319",
+    # RUSTSEC-2026-0459 (CVE-2026-119375) affects only the BUNDLED SQLite C
+    # copy of libsqlite3-sys 0.38.x. We link the SYSTEM library through the
+    # `sqlite` feature (pkg-config), which the advisory explicitly exempts
+    # ("a build that links a system SQLite ... is not affected"). Exposure
+    # is the distro libsqlite3 (3.54.x here), patched upstream. Revisit when
+    # matrix-sdk-sqlite moves to rusqlite 0.41 / libsqlite3-sys 0.39.
+    "RUSTSEC-2026-0459",
 ]
 
 [licenses]
