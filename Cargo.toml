@@ -48,6 +48,7 @@ matrix-sdk = { version = "0.19", default-features = false, features = [
 ] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 url = "2"
+futures-util = "0.3"
 
 [profile.release]
 lto = "thin"

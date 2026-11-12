@@ -19,8 +19,6 @@
 
 use std::collections::HashMap;
 
-use peregrine_core::clock::Clock;
-
 /// Megolm session identifier (protocol session id string).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct SessionId(String);
@@ -168,9 +166,10 @@ impl<E> KeyRequestTracker<E> {
     }
 
     /// Advance the retry ladder: returns one verdict per session whose
-    /// retry deadline has passed. Order is sorted by session id for
-    /// determinism under the DST harness.
-    pub fn tick(&mut self, now_ms: u64, cfg: &RequestCfg, clock: &dyn Clock) -> Vec<RetryVerdict> {
+    /// retry deadline has passed. `now_ms` is the caller's virtual or
+    /// monotonic time (determinism seam; no Clock trait needed here).
+    /// Order is sorted by session id for determinism under the DST harness.
+    pub fn tick(&mut self, now_ms: u64, cfg: &RequestCfg) -> Vec<RetryVerdict> {
         let mut due: Vec<SessionId> = self
             .sessions
             .iter()
@@ -203,7 +202,7 @@ impl<E> KeyRequestTracker<E> {
                         verdicts.push(RetryVerdict::Escalate { session: sid });
                     } else {
                         *attempts += 1;
-                        *next_retry_ms = clock.now_ms().saturating_add(backoff);
+                        *next_retry_ms = now_ms.saturating_add(backoff);
                         verdicts.push(RetryVerdict::Retry {
                             session: sid,
                             attempt: *attempts,
@@ -236,7 +235,6 @@ impl<E> KeyRequestTracker<E> {
 #[cfg(test)]
 #[allow(clippy::expect_used)] // tests: panics are the assertion mechanism
 mod tests {
-    use peregrine_core::clock::FixedClock;
 
     use super::*;
 
@@ -283,7 +281,6 @@ mod tests {
         let mut t: KeyRequestTracker<u64> = KeyRequestTracker::new();
         let sid = SessionId::new("s");
         let c = cfg();
-        let mut clock = FixedClock::at(0);
         let _ = t.on_undecryptable(sid.clone(), 1, 0, &c);
         // Attempts 2..=5 fire on the ladder; attempt 5 escalates; the
         // escalated session is inert forever after.
@@ -292,8 +289,7 @@ mod tests {
         let mut escalations = 0;
         for _ in 0..100 {
             now += 1_000;
-            clock.advance(1_000);
-            for v in t.tick(now, &c, &clock) {
+            for v in t.tick(now, &c) {
                 match v {
                     RetryVerdict::Retry { attempt, .. } => {
                         retries += 1;
@@ -306,8 +302,7 @@ mod tests {
         assert_eq!(retries, c.max_attempts - 1, "ladder fires once per phase");
         assert_eq!(escalations, 1, "escalate exactly once, then never again");
         now += 1_000_000;
-        clock.advance(1_000_000);
-        assert!(t.tick(now, &c, &clock).is_empty(), "escalated is inert");
+        assert!(t.tick(now, &c).is_empty(), "escalated is inert");
     }
 
     #[test]

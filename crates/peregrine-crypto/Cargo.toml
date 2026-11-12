@@ -7,7 +7,9 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[dependencies]
+[dev-dependencies]
+# Tests exercise ladder scheduling with the workspace Clock (dev-dep cycles
+# are fine; the runtime seam is a plain u64 tick time).
 peregrine-core = { workspace = true }
 
 [lints]

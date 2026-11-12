@@ -15,15 +15,36 @@ use std::sync::{
 use matrix_sdk::{
     Client,
     config::SyncSettings,
-    ruma::events::room::message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+    ruma::events::room::{
+        encrypted::OriginalSyncRoomEncryptedEvent,
+        message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+    },
     sliding_sync::{SlidingSyncList, SlidingSyncMode},
 };
+use peregrine_crypto::keyreq::{
+    KeyRequestTracker, RequestCfg, RetryVerdict, SessionId as MegolmSessionId,
+};
+
+/// UTD retry ladder (mirrors `RequestCfg::default_ladder`).
+const UTD_CFG: RequestCfg = RequestCfg::default_ladder();
+
+/// One bounded sliding-sync pass outcome.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SlidingPass {
+    /// Lists the server reported as updated.
+    pub lists: usize,
+    /// Rooms the server reported as changed.
+    pub rooms: usize,
+}
 
 /// Name of the main room list inside the sliding-sync session; re-adding
 /// a list with this name replaces its ranges (the window-update path).
 const SYNC_LIST: &str = "peregrine-main";
 
-use crate::protocol::{ProtocolSession, RoomId, TimelineUpdate, TxnReceipt};
+use crate::{
+    clock::{Clock as _, MonotonicClock},
+    protocol::{ProtocolSession, RoomId, TimelineUpdate, TxnReceipt},
+};
 
 /// Substrate error. String-carried for the spike; typed taxonomy lands
 /// with the retry/backoff policy (catalog-3 L#6).
@@ -64,6 +85,10 @@ pub struct MatrixSession {
     ingest_seq: Arc<AtomicU64>,
     send_seq: Mutex<u64>,
     sliding: OnceLock<matrix_sdk::sliding_sync::SlidingSync>,
+    /// UTD quarantine: sessions whose events failed Megolm decryption.
+    /// Payload = event id string (the substrate re-decrypts stored events
+    /// on key arrival; our cascade exposes diagnostics + resolution).
+    utd: Arc<Mutex<KeyRequestTracker<String>>>,
 }
 
 impl MatrixSession {
@@ -135,6 +160,35 @@ impl MatrixSession {
             },
         );
 
+        let utd: Arc<Mutex<KeyRequestTracker<String>>> =
+            Arc::new(Mutex::new(KeyRequestTracker::new()));
+        let utd_for_handler = Arc::clone(&utd);
+        client.add_event_handler(
+            move |e: OriginalSyncRoomEncryptedEvent, room: matrix_sdk::room::Room| {
+                async move {
+                    let session = match &e.content.scheme {
+                        matrix_sdk::ruma::events::room::encrypted::EncryptedEventScheme::MegolmV1AesSha2(c) => {
+                            Some(MegolmSessionId::new(c.session_id.clone()))
+                        }
+                        _ => None,
+                    };
+                    let Some(sid) = session else { return };
+                    // INVARIANT: wall time here is the sanctioned
+                    // MonotonicClock wrapper (clock.rs); ladder scheduling
+                    // stays deterministic per session.
+                    let clock = MonotonicClock::new();
+                    if let Ok(mut guard) = utd_for_handler.lock() {
+                        let _ = guard.on_undecryptable(
+                            sid,
+                            format!("{}:{}", room.room_id(), e.event_id),
+                            clock.now_ms(),
+                            &UTD_CFG,
+                        );
+                    }
+                }
+            },
+        );
+
         Ok(Self {
             client,
             user_id,
@@ -143,6 +197,7 @@ impl MatrixSession {
             ingest_seq: Arc::new(AtomicU64::new(0)),
             send_seq: Mutex::new(0),
             sliding: OnceLock::new(),
+            utd: Arc::clone(&utd),
         })
     }
 
@@ -150,6 +205,100 @@ impl MatrixSession {
     #[must_use]
     pub fn client(&self) -> &Client {
         &self.client
+    }
+
+    /// UTD diagnostics: parked-event counts per session, sorted by
+    /// session id (trust-DAG inspector + key-request tracing cards).
+    ///
+    /// # Errors
+    ///
+    /// Fails only on poisoned lock; carries the poison reason.
+    pub fn utd_pending(&self) -> Result<Vec<(String, usize)>, MatrixError> {
+        let guard = self
+            .utd
+            .lock()
+            .map_err(|e| MatrixError(format!("utd poisoned: {e}")))?;
+        Ok(guard
+            .parked_counts()
+            .into_iter()
+            .map(|(sid, n)| (sid.as_str().to_owned(), n))
+            .collect())
+    }
+
+    /// Key arrived for `session`: resolve it and return the quarantined
+    /// event ids (cascade bookkeeping; the substrate re-decrypts stored
+    /// events itself when the key lands).
+    ///
+    /// # Errors
+    ///
+    /// Fails only on poisoned lock.
+    pub fn resolve_session(&self, session: &str) -> Result<Vec<String>, MatrixError> {
+        let mut guard = self
+            .utd
+            .lock()
+            .map_err(|e| MatrixError(format!("utd poisoned: {e}")))?;
+        Ok(guard.on_key_received(&MegolmSessionId::new(session)))
+    }
+
+    /// Advance the UTD retry ladder (sync-loop tick). Verdicts drive the
+    /// key-request transport; escalation surfaces to the user.
+    ///
+    /// # Errors
+    ///
+    /// Fails only on poisoned lock.
+    pub fn utd_tick(&self, now_ms: u64) -> Result<Vec<RetryVerdict>, MatrixError> {
+        let mut guard = self
+            .utd
+            .lock()
+            .map_err(|e| MatrixError(format!("utd poisoned: {e}")))?;
+        Ok(guard.tick(now_ms, &UTD_CFG))
+    }
+
+    /// One bounded sliding-sync pass: polls the stream for up to
+    /// `max_wait_ms`, returns the update counts, then returns. The
+    /// long-lived loop that owns the stream end-to-end is the phase-1
+    /// pipeline (hysteresis window drives `apply_window` between passes).
+    ///
+    /// # Errors
+    ///
+    /// Fails on session build, stream error, or timeout expiry with no
+    /// update.
+    pub async fn sliding_pass(&self, max_wait_ms: u64) -> Result<SlidingPass, MatrixError> {
+        // SlidingSync is Arc-backed: the clone is a handle, not a copy.
+        if let Some(s) = self.sliding.get() {
+            return self.sliding_pass_built(s, max_wait_ms).await;
+        }
+        let s = self
+            .client
+            .sliding_sync(SYNC_LIST)
+            .map_err(|e| err("sliding session", e))?
+            .build()
+            .await
+            .map_err(|e| err("sliding build", e))?;
+        let _ = self.sliding.set(s.clone());
+        self.sliding_pass_built(&s, max_wait_ms).await
+    }
+
+    /// Poll one update off an already-built sliding-sync session.
+    async fn sliding_pass_built(
+        &self,
+        sliding: &matrix_sdk::sliding_sync::SlidingSync,
+        max_wait_ms: u64,
+    ) -> Result<SlidingPass, MatrixError> {
+        use futures_util::StreamExt as _;
+        let mut stream = std::pin::pin!(sliding.sync());
+        let summary = tokio::time::timeout(
+            std::time::Duration::from_millis(max_wait_ms),
+            stream.as_mut().next(),
+        )
+        .await
+        .map_err(|_| MatrixError("sliding pass timed out".into()))?
+        .ok_or_else(|| MatrixError("sliding stream ended unexpectedly".into()))?
+        .map_err(|e| err("sliding update", e))?;
+        Ok(SlidingPass {
+            lists: summary.lists.len(),
+            rooms: summary.rooms.len(),
+        })
     }
 
     /// Point the sliding-sync room list at `[start, start + size)` with

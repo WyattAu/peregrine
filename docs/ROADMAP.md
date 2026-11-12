@@ -105,6 +105,7 @@ read-cursor sync, zk-Membership, FROST recovery.
 | E2EE + persistent store | DONE (code) | workspace features `e2e-encryption` + **system** sqlite (RUSTSEC-2026-0459: bundled copy vulnerable, system-linked exempt per advisory; deny ignore documented); CI apt-installs libsqlite3-dev; `MatrixSession::login(store_path)` + spike `PEREGRINE_STORE_PATH` | live decrypt/encrypt verify needs test account |
 | Lean outbox SM | DONE (kernel) | `.specs/proofs/Proofs/Outbox.lean`: SendState lattice (acked sole fixed point, two-step termination, advance monotone) + TxnId seq injectivity/distinctness; ORACLE tags map to outbox_dst tests; `lake build` exit 0, zero sorries | key-request SM next |
 | Key-request SM (UTD core) | DONE (kernel) | `crypto::keyreq` KeyRequestTracker: quarantine+cascade (arrival-ordered, lossless), herd-guard single request, deterministic backoff ladder with escalation; 6 unit + 4 DST tests (no-loss, cadence bounds, seed identity); Lean mirror `Proofs/KeyRequest.lean` (ladder bounded, deadlines future, resolve/escalate inert) | adapter wiring (m.room_key.request transport) |
+| Supply chain: E2EE-flip exemptions | DONE | 407 exempted bootstrap (recorded audit debt incl. syn 1.0.109 old-major via derivative); vet + deny green locally and on CI run for 5b2ea41 | certify backlog over time |
 | CI: fleet-stamped config fix | DONE | `.cargo/config.toml` untracked (mirrors kestrel); run 43030699208 green | - |
 
 Decisions settled 2026-11-10 (defaults adopted): name `peregrine`; TUI first;

@@ -10,10 +10,13 @@ rust-version.workspace = true
 [features]
 default = ["matrix-sdk"]
 # Protocol substrate behind a feature so DST-only consumers can build std-only.
-matrix-sdk = ["dep:matrix-sdk", "dep:url"]
+matrix-sdk = ["dep:matrix-sdk", "dep:url", "dep:tokio", "dep:futures-util"]
 
 [dependencies]
+futures-util = { workspace = true, optional = true }
 matrix-sdk = { workspace = true, optional = true }
+peregrine-crypto = { workspace = true }
+tokio = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 
 [dev-dependencies]

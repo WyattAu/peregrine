@@ -49,7 +49,7 @@ fn run(seed: u64) -> (Vec<String>, usize) {
                 }
             }
         }
-        for v in t.tick(clock_ms, &cfg, &sim) {
+        for v in t.tick(clock_ms, &cfg) {
             match v {
                 RetryVerdict::Retry { .. } => {}
                 RetryVerdict::Escalate { session } => {
