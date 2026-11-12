@@ -13,6 +13,8 @@ path = "src/main.rs"
 
 [dependencies]
 peregrine-core = { workspace = true }
+ratatui = { workspace = true }
+tokio = { workspace = true }
 
 [lints]
 workspace = true

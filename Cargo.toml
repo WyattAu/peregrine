@@ -49,6 +49,9 @@ matrix-sdk = { version = "0.19", default-features = false, features = [
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 url = "2"
 futures-util = "0.3"
+# TUI frontend stack: ratatui re-exports crossterm, so there is no direct
+# crossterm dependency (version unification is then guaranteed by lock).
+ratatui = { version = "0.29", default-features = true }
 
 [profile.release]
 lto = "thin"
