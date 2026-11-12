@@ -2220,12 +2220,16 @@ dependencies = [
 [[package]]
 name = "peregrine-crypto"
 version = "0.1.0"
+dependencies = [
+ "peregrine-core",
+]
 
 [[package]]
 name = "peregrine-dst"
 version = "0.1.0"
 dependencies = [
  "peregrine-core",
+ "peregrine-crypto",
 ]
 
 [[package]]

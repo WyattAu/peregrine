@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 peregrine-core = { workspace = true }
+peregrine-crypto = { workspace = true }
 
 [lints]
 workspace = true
