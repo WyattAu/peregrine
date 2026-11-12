@@ -14,9 +14,10 @@
 // the error surface. Library crates keep the hygiene lints.
 
 use peregrine_core::{
-    adapter_matrix::MatrixSession,
+    adapter_matrix::{MatrixSession, SyncTickOutcome},
     clock::{Clock as _, MonotonicClock},
     protocol::{ProtocolSession, RoomId},
+    window::{SyncWindow, WindowCfg},
 };
 
 fn env(name: &str) -> Option<String> {
@@ -106,6 +107,34 @@ async fn run() {
         _ => {
             println!("read-only pass (set PEREGRINE_ROOM + PEREGRINE_SEND to transmit)");
         }
+    }
+
+    // Hysteresis-window demo (PEREGRINE_WINDOW=1): synthetic scroll ramp
+    // drives the sliding-sync range through sync_tick - the phase-1 loop
+    // body, exercised end-to-end against the live server when set.
+    if env("PEREGRINE_WINDOW").as_deref() == Some("1") {
+        let cfg = WindowCfg::default_room_list();
+        let mut window = SyncWindow::at(0, cfg.size, 0.0);
+        let mut shifts = 0;
+        for i in 0..40_u64 {
+            // INVARIANT: example trace positions are exact small integers.
+            #[allow(clippy::cast_precision_loss)]
+            let pos = (i as f32) * 6.0; // gentle scroll: 240 items total
+            let outcome: SyncTickOutcome = step(
+                "sync_tick",
+                session
+                    .sync_tick(&mut window, pos, i * 200, &cfg, 15_000)
+                    .await,
+            );
+            if let Some(start) = outcome.window_shift {
+                shifts += 1;
+                println!("window  shift -> {start}");
+            }
+        }
+        println!(
+            "window  demo: {shifts} shifts over 40 ticks (settled at {})",
+            window.start()
+        );
     }
 
     println!("waterfall: login {login_ms} ms | sync {sync_ms} ms");

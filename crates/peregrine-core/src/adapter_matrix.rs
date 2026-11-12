@@ -91,6 +91,23 @@ pub struct MatrixSession {
     utd: Arc<Mutex<KeyRequestTracker<String>>>,
 }
 
+/// Timeline events per room requested by the default window.
+pub const DEFAULT_TIMELINE_LIMIT: u32 = 10;
+
+/// One pipeline tick: window decision, optional range shift, one bounded
+/// sliding pass, inbox drain.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct SyncTickOutcome {
+    /// `Some(start)` when the hysteresis window issued a range shift.
+    pub window_shift: Option<u32>,
+    /// Lists the server reported updated.
+    pub lists: usize,
+    /// Rooms the server reported changed.
+    pub rooms: usize,
+    /// Normalized timeline updates observed this tick.
+    pub updates: Vec<TimelineUpdate>,
+}
+
 impl MatrixSession {
     /// Password login against `homeserver_url`; registers the timeline
     /// ingest handler. `store_path` selects the persistent sqlite store
@@ -207,6 +224,26 @@ impl MatrixSession {
         &self.client
     }
 
+    /// Drain the ingest inbox into normalized [`TimelineUpdate`]s
+    /// (ingestion-sequence assigned here: the only layout ordering).
+    ///
+    /// # Errors
+    ///
+    /// Fails only on poisoned lock.
+    pub fn drain_updates(&self) -> Result<Vec<TimelineUpdate>, MatrixError> {
+        let raw = lock(&self.inbox)?.drain(..).collect::<Vec<_>>();
+        Ok(raw
+            .into_iter()
+            .map(|r| TimelineUpdate {
+                ingested_seq: self.ingest_seq.fetch_add(1, Ordering::Relaxed),
+                room: RoomId::new(r.room),
+                sender: r.sender,
+                body: r.body,
+                origin_ts_ms: r.origin_ts_ms,
+            })
+            .collect::<Vec<_>>())
+    }
+
     /// UTD diagnostics: parked-event counts per session, sorted by
     /// session id (trust-DAG inspector + key-request tracing cards).
     ///
@@ -301,6 +338,40 @@ impl MatrixSession {
         })
     }
 
+    /// One pipeline tick (the phase-1 loop body): the caller's
+    /// [`SyncWindow`](crate::window::SyncWindow) decides whether the
+    /// sliding-sync range shifts (hysteresis; D2#13), a bounded pass runs,
+    /// and the inbox drains into normalized updates. The loop that calls
+    /// this owns the window and the pacing; nothing here spins.
+    ///
+    /// # Errors
+    ///
+    /// Fails on range application, pass timeout/stream error, or poisoned
+    /// locks; substrate messages are carried in [`MatrixError`].
+    pub async fn sync_tick(
+        &self,
+        window: &mut crate::window::SyncWindow,
+        anchor_pos: f32,
+        ts_ms: u64,
+        window_cfg: &crate::window::WindowCfg,
+        max_wait_ms: u64,
+    ) -> Result<SyncTickOutcome, MatrixError> {
+        let mut out = SyncTickOutcome::default();
+        match window.on_scroll(anchor_pos, ts_ms, window_cfg) {
+            crate::window::WindowAction::Stay => {}
+            crate::window::WindowAction::Shift { start } => {
+                self.apply_window(start, window_cfg.size, DEFAULT_TIMELINE_LIMIT)
+                    .await?;
+                out.window_shift = Some(start);
+            }
+        }
+        let pass = self.sliding_pass(max_wait_ms).await?;
+        out.lists = pass.lists;
+        out.rooms = pass.rooms;
+        out.updates = self.drain_updates()?;
+        Ok(out)
+    }
+
     /// Point the sliding-sync room list at `[start, start + size)` with
     /// `timeline_limit` events per room. First call builds the session;
     /// later calls replace the list in place (the hysteresis window's
@@ -361,19 +432,7 @@ impl ProtocolSession for MatrixSession {
             .sync_once(SyncSettings::default())
             .await
             .map_err(|e| err("sync", e))?;
-
-        let raw = lock(&self.inbox)?.drain(..).collect::<Vec<_>>();
-        let updates = raw
-            .into_iter()
-            .map(|r| TimelineUpdate {
-                ingested_seq: self.ingest_seq.fetch_add(1, Ordering::Relaxed),
-                room: RoomId::new(r.room),
-                sender: r.sender,
-                body: r.body,
-                origin_ts_ms: r.origin_ts_ms,
-            })
-            .collect::<Vec<_>>();
-        Ok(updates)
+        self.drain_updates()
     }
 
     async fn send_message(&self, room: &RoomId, body: &str) -> Result<TxnReceipt, Self::Error> {
