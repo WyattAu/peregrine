@@ -14,7 +14,7 @@
 // the error surface. Library crates keep the hygiene lints.
 
 use peregrine_core::{
-    adapter_matrix::{MatrixSession, SyncTickOutcome},
+    adapter_matrix::MatrixSession,
     clock::{Clock as _, MonotonicClock},
     protocol::{ProtocolSession, RoomId},
     window::{SyncWindow, WindowCfg},
@@ -120,12 +120,27 @@ async fn run() {
             // INVARIANT: example trace positions are exact small integers.
             #[allow(clippy::cast_precision_loss)]
             let pos = (i as f32) * 6.0; // gentle scroll: 240 items total
-            let outcome: SyncTickOutcome = step(
-                "sync_tick",
-                session
-                    .sync_tick(&mut window, pos, i * 200, &cfg, 15_000)
-                    .await,
-            );
+            let outcome = match session
+                .sync_tick(&mut window, pos, i * 200, &cfg, 15_000)
+                .await
+            {
+                Ok(o) => o,
+                Err(e) => {
+                    let msg = e.to_string().to_ascii_lowercase();
+                    if msg.contains("m_unrecognized")
+                        || msg.contains("not found")
+                        || msg.contains("404")
+                    {
+                        println!(
+                            "window  demo: sliding sync unavailable on this server \
+                             (classic fallback in the loop task); skipping"
+                        );
+                        break;
+                    }
+                    eprintln!("spike: sync_tick failed: {e}");
+                    std::process::exit(1);
+                }
+            };
             if let Some(start) = outcome.window_shift {
                 shifts += 1;
                 println!("window  shift -> {start}");

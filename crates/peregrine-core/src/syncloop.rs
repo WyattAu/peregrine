@@ -9,12 +9,40 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
+use peregrine_crypto::keyreq::RetryVerdict;
 use tokio::sync::{mpsc, watch};
 
+/// Internal transport state (`ProbeSliding` resolves to one of the
+/// other two on the first tick).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModeState {
+    /// First tick: try sliding, demote on unsupported.
+    ProbeSliding,
+    /// Sliding sync confirmed live.
+    Sliding,
+    /// Classic `/sync` loop (window parked).
+    Classic,
+}
+
+/// Does this substrate error mean "endpoint not implemented here"?
+fn is_unrecognized(e: &MatrixError) -> bool {
+    let msg = e.to_string().to_ascii_lowercase();
+    msg.contains("m_unrecognized") || msg.contains("not found") || msg.contains("404")
+}
+
+/// Classic pass: no window decision, no server range report — updates
+/// only.
+fn adapter_tick_classic(updates: Vec<TimelineUpdate>) -> SyncTickOutcome {
+    SyncTickOutcome {
+        updates,
+        ..SyncTickOutcome::default()
+    }
+}
+
 use crate::{
-    adapter_matrix::MatrixSession,
+    adapter_matrix::{MatrixError, MatrixSession, SyncTickOutcome},
     clock::{Clock as _, MonotonicClock},
-    protocol::TimelineUpdate,
+    protocol::{ProtocolSession, TimelineUpdate},
     window::{SyncWindow, WindowCfg},
 };
 
@@ -32,6 +60,8 @@ pub struct LoopCfg {
     pub backoff_max_ms: u64,
     /// Room-list window policy (hysteresis thresholds + range size).
     pub window: WindowCfg,
+    /// Transport selection ([`SyncMode::Auto`] probes and falls back).
+    pub mode: SyncMode,
 }
 
 impl Default for LoopCfg {
@@ -41,8 +71,25 @@ impl Default for LoopCfg {
             max_wait_ms: 15_000,
             backoff_max_ms: 30_000,
             window: WindowCfg::default_room_list(),
+            mode: SyncMode::Auto,
         }
     }
+}
+
+/// Sync transport selection. Sliding sync requires server support
+/// (MSC3575 / MSC4186); [`SyncMode::Auto`] probes once and degrades to
+/// the classic `/sync` loop when the server answers an
+/// unrecognized-endpoint error (continuwuity v26.9.1: no sliding
+/// endpoints — measured 2026-11-13).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SyncMode {
+    /// Probe sliding once; fall back to classic on unsupported.
+    #[default]
+    Auto,
+    /// Sliding sync only (window drives ranges; hysteresis live).
+    Sliding,
+    /// Classic `/sync` only (window parked; no range shifts).
+    Classic,
 }
 
 /// One event surfaced by the loop task. Updates are moved, never copied.
@@ -59,6 +106,11 @@ pub enum LoopEvent {
         rooms: usize,
         /// Timeline updates observed this tick.
         updates: Vec<TimelineUpdate>,
+        /// UTD (undecryptable) sessions currently parked.
+        utd_pending: usize,
+        /// UTD sessions whose retry ladder escalated this pass (keys
+        /// unavailable after the full ladder — a user-facing banner).
+        utd_escalated: usize,
     },
     /// A pass failed; the loop doubled its cadence (abort-free) and will
     /// retry. `cadence_ms` is the new delay; `error` carries the
@@ -129,28 +181,72 @@ pub fn spawn_sync_loop(session: Arc<MatrixSession>, cfg: &LoopCfg) -> LoopHandle
         let clock = MonotonicClock::new();
         let mut window = SyncWindow::at(0, cfg.window.size, 0.0);
         let mut cadence = cfg.cadence_ms;
+        // Transport state machine: Auto probes sliding once; an
+        // M_UNRECOGNIZED (or plain 404) substrate answer demotes the
+        // session to the classic /sync loop for its lifetime.
+        let mut mode = match cfg.mode {
+            SyncMode::Auto | SyncMode::Sliding => ModeState::ProbeSliding,
+            SyncMode::Classic => ModeState::Classic,
+        };
         loop {
             if stop_flag.load(Ordering::Relaxed) {
                 break;
             }
             let anchor = *anchor_rx.borrow();
-            match session
-                .sync_tick(
-                    &mut window,
-                    anchor,
-                    clock.now_ms(),
-                    &cfg.window,
-                    cfg.max_wait_ms,
-                )
-                .await
-            {
+            let outcome = match mode {
+                ModeState::ProbeSliding => match session
+                    .sync_tick(
+                        &mut window,
+                        anchor,
+                        clock.now_ms(),
+                        &cfg.window,
+                        cfg.max_wait_ms,
+                    )
+                    .await
+                {
+                    Ok(outcome) => {
+                        mode = ModeState::Sliding;
+                        Some(Ok(outcome))
+                    }
+                    Err(e) if is_unrecognized(&e) => {
+                        mode = ModeState::Classic;
+                        None // retry immediately in classic below
+                    }
+                    Err(e) => Some(Err(e)),
+                },
+                ModeState::Sliding => Some(
+                    session
+                        .sync_tick(
+                            &mut window,
+                            anchor,
+                            clock.now_ms(),
+                            &cfg.window,
+                            cfg.max_wait_ms,
+                        )
+                        .await,
+                ),
+                ModeState::Classic => Some(session.sync_once().await.map(adapter_tick_classic)),
+            };
+            // Demotion: loop straight into the classic tick.
+            let Some(result) = outcome else {
+                continue;
+            };
+            match result {
                 Ok(outcome) => {
                     cadence = cfg.cadence_ms;
+                    let verdicts = session.utd_tick(clock.now_ms()).unwrap_or_default();
+                    let utd_pending = session.utd_pending().map_or(0, |v| v.len());
+                    let utd_escalated = verdicts
+                        .iter()
+                        .filter(|v| matches!(v, RetryVerdict::Escalate { .. }))
+                        .count();
                     let ev = LoopEvent::Tick {
                         window_shift: outcome.window_shift,
                         lists: outcome.lists,
                         rooms: outcome.rooms,
                         updates: outcome.updates,
+                        utd_pending,
+                        utd_escalated,
                     };
                     if events_tx.send(ev).await.is_err() {
                         break;
