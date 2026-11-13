@@ -22,15 +22,12 @@ use matrix_sdk::{
         EventEncryptionAlgorithm,
         api::client::room::create_room::v3::RoomPreset,
         events::{
-            room::{
-                encryption::RoomEncryptionEventContent, message::RoomMessageEventContent,
-            },
             EmptyStateKey,
+            room::{encryption::RoomEncryptionEventContent, message::RoomMessageEventContent},
         },
     },
 };
-use peregrine_core::adapter_matrix::MatrixSession;
-use peregrine_core::protocol::ProtocolSession;
+use peregrine_core::{adapter_matrix::MatrixSession, protocol::ProtocolSession};
 
 fn env(name: &str) -> Option<String> {
     match std::env::var(name) {
@@ -128,16 +125,14 @@ async fn run() {
         }
         tokio::time::sleep(Duration::from_millis(700)).await;
     }
-    match seen {
-        Some(u) => println!(
-            "decrypt ok  [{}] {} in {} — Megolm round-trip VERIFIED",
-            u.ingested_seq, u.sender, u.room
-        ),
-        None => {
-            eprintln!("e2ee_self: marker never surfaced decrypted — FAIL");
-            std::process::exit(1);
-        }
-    }
+    let Some(u) = seen else {
+        eprintln!("e2ee_self: marker never surfaced decrypted — FAIL");
+        std::process::exit(1);
+    };
+    println!(
+        "decrypt ok  [{}] {} in {} — Megolm round-trip VERIFIED",
+        u.ingested_seq, u.sender, u.room
+    );
 
     let utd = session.utd_pending().unwrap_or_else(|e| {
         eprintln!("e2ee_self: utd probe failed: {e}");

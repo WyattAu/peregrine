@@ -16,7 +16,8 @@ use tokio::sync::{mpsc, watch};
 /// other two on the first tick).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ModeState {
-    /// First tick: try sliding, demote on unsupported.
+    /// First tick: probe the sliding endpoint raw, demote on anything
+    /// but a clean 200.
     ProbeSliding,
     /// Sliding sync confirmed live.
     Sliding,
@@ -24,10 +25,61 @@ enum ModeState {
     Classic,
 }
 
-/// Does this substrate error mean "endpoint not implemented here"?
-fn is_unrecognized(e: &MatrixError) -> bool {
-    let msg = e.to_string().to_ascii_lowercase();
-    msg.contains("m_unrecognized") || msg.contains("not found") || msg.contains("404")
+/// Probe sliding-sync support with one raw, bounded HTTP POST. The
+/// SDK's sliding stream cannot be trusted for capability detection: it
+/// can yield a synthetic update against unsupported servers (measured
+/// on continuwuity v26.9.1), which would wedge the loop in Sliding
+/// mode. The raw status code is the only honest signal.
+async fn probe_sliding(client: &matrix_sdk::Client) -> Result<(), String> {
+    let token = client
+        .access_token()
+        .ok_or_else(|| "no access token".to_owned())?;
+    let url = format!(
+        "{}/_matrix/client/unstable/org.matrix.simplified_sliding_sync/sync",
+        client.homeserver().as_str().trim_end_matches('/')
+    );
+    let resp = client
+        .http_client()
+        .post(&url)
+        .bearer_auth(&token)
+        .header("Content-Type", "application/json")
+        .body("{}")
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+        .map_err(|e| format!("probe request failed: {e}"))?;
+    let status = resp.status().as_u16();
+    if status == 200 {
+        Ok(())
+    } else {
+        let body = resp.text().await.unwrap_or_default();
+        Err(format!("sliding endpoint returned {status}: {body}"))
+    }
+}
+
+/// One probe step: run [`probe_sliding`] under the config bound and
+/// resolve the transport. `Ok(())` → Sliding with no event; any
+/// failure → Classic plus the [`LoopEvent::TransportDemoted`] to
+/// surface to the UI.
+async fn probe_step(session: &MatrixSession, cfg: &LoopCfg) -> (ModeState, Option<LoopEvent>) {
+    let bounded = tokio::time::timeout(
+        std::time::Duration::from_millis(cfg.probe_ms),
+        probe_sliding(session.client()),
+    )
+    .await;
+    match bounded {
+        Ok(Ok(())) => (ModeState::Sliding, None),
+        Ok(Err(reason)) => (
+            ModeState::Classic,
+            Some(LoopEvent::TransportDemoted { reason }),
+        ),
+        Err(_elapsed) => (
+            ModeState::Classic,
+            Some(LoopEvent::TransportDemoted {
+                reason: format!("sliding probe exceeded {} ms", cfg.probe_ms),
+            }),
+        ),
+    }
 }
 
 /// Classic pass: no window decision, no server range report — updates
@@ -40,7 +92,7 @@ fn adapter_tick_classic(updates: Vec<TimelineUpdate>) -> SyncTickOutcome {
 }
 
 use crate::{
-    adapter_matrix::{MatrixError, MatrixSession, SyncTickOutcome},
+    adapter_matrix::{MatrixSession, SyncTickOutcome},
     clock::{Clock as _, MonotonicClock},
     protocol::{ProtocolSession, TimelineUpdate},
     window::{SyncWindow, WindowCfg},
@@ -62,6 +114,11 @@ pub struct LoopCfg {
     pub window: WindowCfg,
     /// Transport selection ([`SyncMode::Auto`] probes and falls back).
     pub mode: SyncMode,
+    /// Hard wall-clock bound for the sliding capability probe. The
+    /// SDK's sliding session internals retry "transient" errors on
+    /// their own; without this bound an unsupported server wedges the
+    /// first tick forever (measured on continuwuity v26.9.1).
+    pub probe_ms: u64,
 }
 
 impl Default for LoopCfg {
@@ -72,6 +129,7 @@ impl Default for LoopCfg {
             backoff_max_ms: 30_000,
             window: WindowCfg::default_room_list(),
             mode: SyncMode::Auto,
+            probe_ms: 8_000,
         }
     }
 }
@@ -120,6 +178,13 @@ pub enum LoopEvent {
         cadence_ms: u64,
         /// Display-formatted substrate error.
         error: String,
+    },
+    /// The sliding capability probe failed: the loop fell back to the
+    /// classic `/sync` transport for its lifetime (window stays parked;
+    /// no range shifts on this server).
+    TransportDemoted {
+        /// Why the probe failed (substrate message or timeout note).
+        reason: String,
     },
 }
 
@@ -194,26 +259,18 @@ pub fn spawn_sync_loop(session: Arc<MatrixSession>, cfg: &LoopCfg) -> LoopHandle
             }
             let anchor = *anchor_rx.borrow();
             let outcome = match mode {
-                ModeState::ProbeSliding => match session
-                    .sync_tick(
-                        &mut window,
-                        anchor,
-                        clock.now_ms(),
-                        &cfg.window,
-                        cfg.max_wait_ms,
-                    )
-                    .await
-                {
-                    Ok(outcome) => {
-                        mode = ModeState::Sliding;
-                        Some(Ok(outcome))
+                ModeState::ProbeSliding => {
+                    let (state, demoted) = probe_step(&session, &cfg).await;
+                    mode = state;
+                    // Collapsible-if avoided: channel send is fallible
+                    // and the loop must break on receiver drop.
+                    if let Some(ev) = demoted
+                        && events_tx.send(ev).await.is_err()
+                    {
+                        break;
                     }
-                    Err(e) if is_unrecognized(&e) => {
-                        mode = ModeState::Classic;
-                        None // retry immediately in classic below
-                    }
-                    Err(e) => Some(Err(e)),
-                },
+                    None // proceed with the resolved transport, no sleep
+                }
                 ModeState::Sliding => Some(
                     session
                         .sync_tick(

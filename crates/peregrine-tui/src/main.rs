@@ -512,7 +512,7 @@ async fn run() {
         }
     };
 
-    let (log_tx, mut log_rx) = mpsc::channel(16);
+    let (log_tx, mut log_rx) = mpsc::channel::<String>(16);
     let mut loop_handle: LoopHandle = spawn_sync_loop(Arc::clone(&session), &LoopCfg::default());
     let mut input_rx = spawn_input_pump();
 
@@ -549,6 +549,10 @@ async fn run() {
                 Some(LoopEvent::Backoff { cadence_ms, error }) => {
                     model.errors += 1;
                     model.log(format!("sync backoff {cadence_ms} ms: {error}"));
+                }
+                Some(LoopEvent::TransportDemoted { reason }) => {
+                    model
+                        .log(format!("sliding sync unavailable — classic fallback: {reason}"));
                 }
                 None => {
                     model.log("sync loop ended");
