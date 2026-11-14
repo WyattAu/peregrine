@@ -15,22 +15,15 @@
 
 use std::time::Duration;
 
-use matrix_sdk::{
-    Client,
-    ruma::{
-        EventEncryptionAlgorithm,
-        api::client::room::create_room::v3::RoomPreset,
-        events::{
-            room::{
-                encryption::RoomEncryptionEventContent, message::RoomMessageEventContent,
-            },
-            EmptyStateKey,
-        },
-        OwnedUserId,
+use matrix_sdk::ruma::{
+    EventEncryptionAlgorithm, OwnedUserId,
+    api::client::room::create_room::v3::RoomPreset,
+    events::{
+        EmptyStateKey,
+        room::{encryption::RoomEncryptionEventContent, message::RoomMessageEventContent},
     },
 };
-use peregrine_core::adapter_matrix::MatrixSession;
-use peregrine_core::protocol::ProtocolSession;
+use peregrine_core::{adapter_matrix::MatrixSession, protocol::ProtocolSession};
 
 fn env(name: &str) -> Option<String> {
     match std::env::var(name) {
@@ -120,9 +113,9 @@ async fn run() {
             .members(matrix_sdk::RoomMemberships::JOIN)
             .await
             .unwrap_or_default();
-        joined = members.iter().any(|m| m.user_id() == &peer_id);
+        joined = members.iter().any(|m| m.user_id() == peer_id);
         if !joined {
-            tokio::time::sleep(Duration::from_millis(2_000)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
     }
     if !joined {
@@ -149,7 +142,7 @@ async fn run() {
         let updates = session.sync_once().await.unwrap_or_default();
         for u in updates {
             if u.sender.as_str() == peer.as_str() && u.body != seen_marker {
-                seen_marker = u.body.clone();
+                seen_marker.clone_from(&u.body);
                 println!(
                     "decrypt ok  [{}] {}: {} — cross-server Megolm VERIFIED",
                     u.ingested_seq, u.sender, u.body
