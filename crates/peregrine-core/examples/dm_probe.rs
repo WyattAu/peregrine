@@ -1,6 +1,6 @@
 //! Probe: what does the SDK's DM discovery see for the peer?
-//! Prints m.direct account data, per-room direct_targets, and
-//! get_dm_room resolution after one full sync.
+//! Prints `m.direct` account data, per-room `direct_targets`, and
+//! `get_dm_room` resolution after one full sync.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 // INVARIANT: examples are CLI programs; stdout/stderr are the product
@@ -70,7 +70,9 @@ async fn run() {
                 "room {} direct_targets={:?} members={}",
                 room.room_id(),
                 targets,
-                room.members_no_sync(matrix_sdk::RoomMemberships::ACTIVE).await.map(|m| m.len()).unwrap_or(0)
+                room.members_no_sync(matrix_sdk::RoomMemberships::ACTIVE)
+                    .await
+                    .map_or(0, |m| m.len())
             );
         }
     }
