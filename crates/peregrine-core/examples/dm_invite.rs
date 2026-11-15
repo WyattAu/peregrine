@@ -15,14 +15,7 @@
 
 use std::time::Duration;
 
-use matrix_sdk::ruma::{
-    EventEncryptionAlgorithm, OwnedUserId,
-    api::client::room::create_room::v3::RoomPreset,
-    events::{
-        EmptyStateKey,
-        room::{encryption::RoomEncryptionEventContent, message::RoomMessageEventContent},
-    },
-};
+use matrix_sdk::ruma::{OwnedUserId, events::room::message::RoomMessageEventContent};
 use peregrine_core::{adapter_matrix::MatrixSession, protocol::ProtocolSession};
 
 fn env(name: &str) -> Option<String> {
@@ -72,34 +65,22 @@ async fn run() {
         });
     let client = session.client().clone();
 
-    let mut request = matrix_sdk::ruma::api::client::room::create_room::v3::Request::new();
-    request.preset = Some(RoomPreset::TrustedPrivateChat);
-    request.invite = vec![peer_id.clone()];
-    let room_id = client
-        .create_room(request)
-        .await
-        .unwrap_or_else(|e| {
-            eprintln!("dm_invite: create_room failed: {e}");
-            std::process::exit(1);
-        })
-        .room_id()
-        .to_owned();
-    println!("room    ok  {room_id} (invited {peer})");
-
-    let room = client.get_room(&room_id).unwrap_or_else(|| {
+    // Native DM creation: is_direct invite semantics + encryption
+    // state via the SDK's create_dm (adapter wraps it).
+    let room_id = session.create_dm(&peer_id).await.unwrap_or_else(|e| {
+        eprintln!("dm_invite: create_dm failed: {e}");
+        std::process::exit(1);
+    });
+    let ruma_room_id = matrix_sdk::ruma::RoomId::parse(room_id.as_str()).unwrap_or_else(|e| {
+        eprintln!("dm_invite: room id parse failed: {e}");
+        std::process::exit(1);
+    });
+    println!("room    ok  {room_id} (invited {peer}, megolm enabled)");
+    let room = client.get_room(&ruma_room_id).unwrap_or_else(|| {
         eprintln!("dm_invite: room not found after create");
         std::process::exit(1);
     });
-    room.send_state_event_for_key(
-        &EmptyStateKey,
-        RoomEncryptionEventContent::new(EventEncryptionAlgorithm::MegolmV1AesSha2),
-    )
-    .await
-    .unwrap_or_else(|e| {
-        eprintln!("dm_invite: enable encryption failed: {e}");
-        std::process::exit(1);
-    });
-    println!("crypto  ok  megolm enabled; waiting for {peer} to join (max {secs}s)");
+    println!("waiting for {peer} to join (max {secs}s)");
 
     // Wait for the peer's membership to reach join, then greet.
     let mut joined = false;

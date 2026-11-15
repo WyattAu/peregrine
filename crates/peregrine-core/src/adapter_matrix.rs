@@ -15,9 +15,12 @@ use std::sync::{
 use matrix_sdk::{
     Client,
     config::SyncSettings,
-    ruma::events::room::{
-        encrypted::OriginalSyncRoomEncryptedEvent,
-        message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+    ruma::{
+        UserId,
+        events::room::{
+            encrypted::OriginalSyncRoomEncryptedEvent,
+            message::{OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+        },
     },
     sliding_sync::{SlidingSyncList, SlidingSyncMode},
 };
@@ -415,6 +418,27 @@ impl MatrixSession {
         // update path above.
         let _ = self.sliding.set(sliding);
         Ok(())
+    }
+}
+
+impl MatrixSession {
+    /// Create a direct-message room with `peer`: the SDK's native
+    /// [`Client::create_dm`] (`is_direct` invite semantics, encryption
+    /// state, and the room's direct-target list set for DM discovery).
+    /// The precondition for interactive cross-client verification,
+    /// which resolves the DM through the room's direct targets.
+    ///
+    /// # Errors
+    ///
+    /// Fails on room creation; substrate messages are carried in
+    /// [`MatrixError`].
+    pub async fn create_dm(&self, peer: &UserId) -> Result<RoomId, MatrixError> {
+        let room = self
+            .client
+            .create_dm(peer)
+            .await
+            .map_err(|e| err("create_dm", e))?;
+        Ok(RoomId::new(room.room_id().as_str()))
     }
 }
 
