@@ -2391,6 +2391,7 @@ dependencies = [
  "futures-util",
  "matrix-sdk",
  "peregrine-crypto",
+ "serde_json",
  "tokio",
  "url",
 ]

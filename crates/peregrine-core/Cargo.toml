@@ -15,6 +15,7 @@ matrix-sdk = ["dep:matrix-sdk", "dep:url", "dep:tokio", "dep:futures-util"]
 [dependencies]
 futures-util = { workspace = true, optional = true }
 matrix-sdk = { workspace = true, optional = true }
+serde_json = { workspace = true }
 peregrine-crypto = { workspace = true }
 tokio = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
