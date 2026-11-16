@@ -52,7 +52,15 @@ async fn run() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
 
-    let session = match MatrixSession::login(&hs, &user, &pass, "peregrine-page", None).await {
+    let session = match MatrixSession::login(
+        &hs,
+        &user,
+        &pass,
+        "peregrine-page",
+        env("PEREGRINE_STORE_PATH").as_deref(),
+    )
+    .await
+    {
         Ok(s) => s,
         Err(e) => {
             eprintln!("paginate: login failed: {e}");

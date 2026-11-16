@@ -144,15 +144,39 @@ impl MatrixSession {
         store_path: Option<&str>,
     ) -> Result<Self, MatrixError> {
         let url = url::Url::parse(homeserver_url).map_err(|e| err("homeserver url", e))?;
-        let client = match store_path {
-            Some(path) => Client::builder()
-                .homeserver_url(url)
-                .sqlite_store(path, None)
-                .build()
-                .await
-                .map_err(|e| err("client build (sqlite store)", e))?,
-            None => Client::new(url).await.map_err(|e| err("client build", e))?,
+
+        // INVARIANT: crypto keys must survive process restarts or every
+        // new session loses megolm session state and all encrypted
+        // history becomes permanently undecryptable (measured). The
+        // default is therefore a persistent per-user+device store under
+        // XDG data home; pass Some(":memory:") to opt out (tests).
+        let resolved = if let Some(path) = store_path {
+            path.to_owned()
+        } else {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+            let safe = |s: &str| {
+                s.chars()
+                    .map(|c| {
+                        if c.is_alphanumeric() || c == '-' || c == '.' {
+                            c
+                        } else {
+                            '_'
+                        }
+                    })
+                    .collect::<String>()
+            };
+            format!(
+                "{home}/.local/share/peregrine/store-{}-{}",
+                safe(user),
+                safe(device_name)
+            )
         };
+        let client = Client::builder()
+            .homeserver_url(url)
+            .sqlite_store(&resolved, None)
+            .build()
+            .await
+            .map_err(|e| err("client build (sqlite store)", e))?;
         client
             .matrix_auth()
             .login_username(user, pass)
@@ -167,6 +191,12 @@ impl MatrixSession {
             .device_id()
             .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
 
+        Ok(Self::attach(client, user_id, device))
+    }
+
+    /// Wire the ingest handlers and assemble the session around an
+    /// authenticated client (shared by login and restore).
+    fn attach(client: Client, user_id: String, device: String) -> Self {
         let inbox: Arc<Mutex<Vec<RawIngest>>> = Arc::new(Mutex::new(Vec::new()));
         let handler_inbox = Arc::clone(&inbox);
         client.add_event_handler(
@@ -218,7 +248,7 @@ impl MatrixSession {
             },
         );
 
-        Ok(Self {
+        Self {
             client,
             user_id,
             device,
@@ -227,7 +257,7 @@ impl MatrixSession {
             send_seq: Mutex::new(0),
             sliding: OnceLock::new(),
             utd: Arc::clone(&utd),
-        })
+        }
     }
 
     /// The underlying substrate client (sliding-sync setup, rooms API).
@@ -505,6 +535,40 @@ impl MatrixSession {
             next_from: messages.end,
             updates,
         })
+    }
+
+    /// Restore a persisted session from the sqlite store at
+    /// `store_path` (same device id, same megolm session keys — no
+    /// fresh login). Fails when the store holds no session.
+    ///
+    /// # Errors
+    ///
+    /// Fails on client build, missing stored session, or session
+    /// restore errors.
+    pub async fn restore(homeserver_url: &str, store_path: &str) -> Result<Self, MatrixError> {
+        let url = url::Url::parse(homeserver_url).map_err(|e| err("homeserver url", e))?;
+        let client = Client::builder()
+            .homeserver_url(url)
+            .sqlite_store(store_path, None)
+            .build()
+            .await
+            .map_err(|e| err("client build (restore)", e))?;
+        let session = client
+            .session()
+            .ok_or_else(|| MatrixError("no stored session in store".into()))?;
+        client
+            .restore_session(session)
+            .await
+            .map_err(|e| err("restore_session", e))?;
+
+        let user_id = client
+            .user_id()
+            .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
+        let device = client
+            .device_id()
+            .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
+
+        Ok(Self::attach(client, user_id, device))
     }
 
     /// Create a direct-message room with `peer`: the SDK's native

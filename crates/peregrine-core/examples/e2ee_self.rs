@@ -59,12 +59,18 @@ async fn run() {
     let user = require("PEREGRINE_USER");
     let pass = require("PEREGRINE_PASS");
 
-    let session = MatrixSession::login(&hs, &user, &pass, "peregrine-e2ee", None)
-        .await
-        .unwrap_or_else(|e| {
-            eprintln!("e2ee_self: login failed: {e}");
-            std::process::exit(1);
-        });
+    let session = MatrixSession::login(
+        &hs,
+        &user,
+        &pass,
+        "peregrine-e2ee",
+        env("PEREGRINE_STORE_PATH").as_deref(),
+    )
+    .await
+    .unwrap_or_else(|e| {
+        eprintln!("e2ee_self: login failed: {e}");
+        std::process::exit(1);
+    });
     println!("login   ok");
 
     let client: Client = session.client().clone();
