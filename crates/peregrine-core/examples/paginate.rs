@@ -12,7 +12,6 @@
 // INVARIANT: examples are CLI programs; stdout/stderr are the product
 // and the error surface. Library crates keep the hygiene lints.
 
-use matrix_sdk::config::SyncSettings;
 use peregrine_core::{
     adapter_matrix::MatrixSession,
     protocol::{ProtocolSession, RoomId},
@@ -73,34 +72,28 @@ async fn run() {
             Some(tok) => session.paginate_history(&rid, Some(tok), 30).await,
             None => session.paginate_history(&rid, None, 30).await,
         };
-        match result {
-            Ok(p) => {
-                println!(
-                    "page    {}  {} events (next_from={})",
-                    page + 1,
-                    p.updates.len(),
-                    p.next_from.as_deref().unwrap_or("<exhausted>")
-                );
-                for u in &p.updates {
-                    println!("  [{}] {}: {}", u.ingested_seq, u.sender, u.body);
-                }
-                for u in &p.updates {
-                    println!("  [{}] {}: {}", u.ingested_seq, u.sender, u.body);
-                }
-                total += p.updates.len();
-                match p.next_from {
-                    Some(tok) => from = Some(tok),
-                    None => {
-                        println!("history exhausted after {total} events");
-                        return;
-                    }
-                }
-            }
+        let p = match result {
+            Ok(p) => p,
             Err(e) => {
                 eprintln!("paginate: page {} failed: {e}", page + 1);
                 std::process::exit(1);
             }
+        };
+        println!(
+            "page    {}  {} events (next_from={})",
+            page + 1,
+            p.updates.len(),
+            p.next_from.as_deref().unwrap_or("<exhausted>")
+        );
+        for u in &p.updates {
+            println!("  [{}] {}: {}", u.ingested_seq, u.sender, u.body);
         }
+        total += p.updates.len();
+        let Some(tok) = p.next_from else {
+            println!("history exhausted after {total} events");
+            return;
+        };
+        from = Some(tok);
     }
     println!("dumped {total} events across {max_pages} pages (cap reached)");
 }

@@ -466,8 +466,6 @@ impl MatrixSession {
             let Ok(any) = te.raw().deserialize() else {
                 continue;
             };
-            if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(mle) = &any {
-            }
             let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(mle) = any else {
                 continue;
             };
