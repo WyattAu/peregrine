@@ -191,7 +191,7 @@ impl MatrixSession {
             .device_id()
             .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
 
-        Ok(Self::attach(client, user_id, device))
+        Ok(Self::attach(client, user_id.as_str().to_owned(), device))
     }
 
     /// Wire the ingest handlers and assemble the session around an
@@ -547,28 +547,26 @@ impl MatrixSession {
     /// restore errors.
     pub async fn restore(homeserver_url: &str, store_path: &str) -> Result<Self, MatrixError> {
         let url = url::Url::parse(homeserver_url).map_err(|e| err("homeserver url", e))?;
+        // INVARIANT: a store-built client loads its session (user,
+        // tokens, megolm keys) from the store during build — no
+        // restore_session call needed here (that API is for sessions
+        // held OUTSIDE the store).
         let client = Client::builder()
             .homeserver_url(url)
             .sqlite_store(store_path, None)
             .build()
             .await
             .map_err(|e| err("client build (restore)", e))?;
-        let session = client
-            .session()
-            .ok_or_else(|| MatrixError("no stored session in store".into()))?;
-        client
-            .restore_session(session)
-            .await
-            .map_err(|e| err("restore_session", e))?;
 
-        let user_id = client
-            .user_id()
-            .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
+        let Some(user_id) = client.user_id() else {
+            return Err(MatrixError("store holds no session".into()));
+        };
+        let user_id = user_id.to_owned();
         let device = client
             .device_id()
             .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
 
-        Ok(Self::attach(client, user_id, device))
+        Ok(Self::attach(client, user_id.as_str().to_owned(), device))
     }
 
     /// Create a direct-message room with `peer`: the SDK's native
