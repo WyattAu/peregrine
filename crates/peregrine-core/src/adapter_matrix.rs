@@ -24,6 +24,15 @@ use matrix_sdk::{
     },
     sliding_sync::{SlidingSyncList, SlidingSyncMode},
 };
+
+/// One backward history page (see [`MatrixSession::paginate_history`]).
+#[derive(Debug, Clone)]
+pub struct HistoryPage {
+    /// Token for the next backward call; `None` = exhausted.
+    pub next_from: Option<String>,
+    /// Normalized updates, chronological (oldest first).
+    pub updates: Vec<crate::protocol::TimelineUpdate>,
+}
 use peregrine_crypto::keyreq::{
     KeyRequestTracker, RequestCfg, RetryVerdict, SessionId as MegolmSessionId,
 };
@@ -422,6 +431,84 @@ impl MatrixSession {
 }
 
 impl MatrixSession {
+    /// One backward history page for `room_id`, normalized into
+    /// [`TimelineUpdate`]s (chronological, oldest first). `from` is the
+    /// token from the previous [`HistoryPage`] (`None` = start at the
+    /// newest known event). `next_from` in the page feeds the next call;
+    /// `None` means history is exhausted.
+    ///
+    /// # Errors
+    ///
+    /// Fails on unknown room or substrate request errors.
+    pub async fn paginate_history(
+        &self,
+        room_id: &RoomId,
+        from: Option<&str>,
+        limit: u32,
+    ) -> Result<HistoryPage, MatrixError> {
+        use matrix_sdk::room::MessagesOptions;
+        let rid = matrix_sdk::ruma::RoomId::parse(room_id.as_str())
+            .map_err(|e| MatrixError(format!("room id parse: {e}")))?;
+        let Some(room) = self.client.get_room(&rid) else {
+            return Err(MatrixError(format!("room not in state: {room_id}")));
+        };
+        let mut opts = MessagesOptions::backward().from(from);
+        opts.limit = matrix_sdk::ruma::UInt::from(limit);
+        let messages = room.messages(opts).await.map_err(|e| err("messages", e))?;
+
+        let count = messages.chunk.len();
+        let seq_base = self.ingest_seq.fetch_add(
+            count.try_into().unwrap_or(u64::MAX),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let mut updates = Vec::with_capacity(count);
+        for (i, te) in messages.chunk.iter().enumerate() {
+            let Ok(any) = te.raw().deserialize() else {
+                continue;
+            };
+            if let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(mle) = &any {
+            }
+            let matrix_sdk::ruma::events::AnySyncTimelineEvent::MessageLike(mle) = any else {
+                continue;
+            };
+            let matrix_sdk::ruma::events::AnySyncMessageLikeEvent::RoomMessage(m) = mle else {
+                continue;
+            };
+            // Original carries the plaintext body; redacted events have
+            // an empty redacted body — both map to the timeline shape.
+            // INVARIANT: redacted messages carry an empty redacted body
+            // (the payload was stripped); the timeline renders them as
+            // blank lines, which is the spec-correct presentation.
+            let (sender, body, ts) = match m {
+                matrix_sdk::ruma::events::SyncMessageLikeEvent::Original(orig) => (
+                    orig.sender.as_str().to_owned(),
+                    orig.content.body().to_owned(),
+                    u64::from(orig.origin_server_ts.get()),
+                ),
+                matrix_sdk::ruma::events::SyncMessageLikeEvent::Redacted(red) => (
+                    red.sender.as_str().to_owned(),
+                    String::new(),
+                    u64::from(red.origin_server_ts.get()),
+                ),
+            };
+            // INVARIANT: widen usize->u64 for the seq counter; loop index
+            // is bounded by the page limit.
+            #[allow(clippy::cast_possible_truncation)]
+            updates.push(TimelineUpdate {
+                ingested_seq: seq_base + i as u64,
+                room: RoomId::new(room_id.as_str()),
+                sender,
+                body,
+                origin_ts_ms: ts,
+            });
+        }
+        updates.reverse();
+        Ok(HistoryPage {
+            next_from: messages.end,
+            updates,
+        })
+    }
+
     /// Create a direct-message room with `peer`: the SDK's native
     /// [`Client::create_dm`] (`is_direct` invite semantics, encryption
     /// state, and the room's direct-target list set for DM discovery).
