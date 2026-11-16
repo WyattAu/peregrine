@@ -177,12 +177,13 @@ impl MatrixSession {
             .build()
             .await
             .map_err(|e| err("client build (sqlite store)", e))?;
-        client
+        let response = client
             .matrix_auth()
             .login_username(user, pass)
             .initial_device_display_name(device_name)
             .await
             .map_err(|e| err("login", e))?;
+        let record = matrix_sdk::authentication::matrix::MatrixSession::from(&response);
 
         let user_id = client
             .user_id()
@@ -191,7 +192,19 @@ impl MatrixSession {
             .device_id()
             .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
 
-        Ok(Self::attach(client, user_id.as_str().to_owned(), device))
+        // INVARIANT: the sqlite store alone does not restore sessions —
+        // the tokens must persist outside the SDK store for `restore()`
+        // to re-enter this exact device. Sidecar written next to the
+        // store when a persistent store is in use.
+        if let Some(path) = store_path {
+            let json = serde_json::to_string(&record)
+                .map_err(|e| MatrixError(format!("sidecar serialize: {e}")))?;
+            let sidecar = std::path::Path::new(path).with_extension("session.json");
+            std::fs::write(sidecar, json)
+                .map_err(|e| MatrixError(format!("sidecar write: {e}")))?;
+        }
+
+        Ok(Self::attach(client, user_id, device))
     }
 
     /// Wire the ingest handlers and assemble the session around an
@@ -547,10 +560,10 @@ impl MatrixSession {
     /// restore errors.
     pub async fn restore(homeserver_url: &str, store_path: &str) -> Result<Self, MatrixError> {
         let url = url::Url::parse(homeserver_url).map_err(|e| err("homeserver url", e))?;
-        // INVARIANT: a store-built client loads its session (user,
-        // tokens, megolm keys) from the store during build — no
-        // restore_session call needed here (that API is for sessions
-        // held OUTSIDE the store).
+        // INVARIANT: the sqlite store contributes cached state + megolm
+        // keys, but the session itself (tokens + ids) lives in the
+        // sidecar `login` wrote next to the store — the store-built
+        // client does not self-restore.
         let client = Client::builder()
             .homeserver_url(url)
             .sqlite_store(store_path, None)
@@ -558,15 +571,20 @@ impl MatrixSession {
             .await
             .map_err(|e| err("client build (restore)", e))?;
 
-        let Some(user_id) = client.user_id() else {
-            return Err(MatrixError("store holds no session".into()));
-        };
-        let user_id = user_id.to_owned();
-        let device = client
-            .device_id()
-            .map_or_else(|| "unknown".to_string(), std::string::ToString::to_string);
+        let sidecar = std::path::Path::new(store_path).with_extension("session.json");
+        let json = std::fs::read_to_string(sidecar)
+            .map_err(|e| MatrixError(format!("no session sidecar: {e}")))?;
+        let record: matrix_sdk::authentication::matrix::MatrixSession =
+            serde_json::from_str(&json).map_err(|e| MatrixError(format!("sidecar parse: {e}")))?;
+        let user_id = record.meta.user_id.as_str().to_owned();
+        let device = record.meta.device_id.as_str().to_owned();
 
-        Ok(Self::attach(client, user_id.as_str().to_owned(), device))
+        client
+            .restore_session(matrix_sdk::authentication::AuthSession::Matrix(record))
+            .await
+            .map_err(|e| err("restore_session", e))?;
+
+        Ok(Self::attach(client, user_id, device))
     }
 
     /// Create a direct-message room with `peer`: the SDK's native

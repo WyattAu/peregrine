@@ -52,19 +52,34 @@ async fn run() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
 
-    let session = match MatrixSession::login(
-        &hs,
-        &user,
-        &pass,
-        "peregrine-page",
-        env("PEREGRINE_STORE_PATH").as_deref(),
-    )
-    .await
-    {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("paginate: login failed: {e}");
-            std::process::exit(1);
+    let session = if let Some(store) = env("PEREGRINE_STORE_PATH") {
+        // Restore-first: the persisted store comes back as the SAME
+        // device (megolm keys included); fresh login only when the
+        // store holds no session.
+        match MatrixSession::restore(&hs, &store).await {
+            Ok(s) => {
+                println!("session restored from store");
+                s
+            }
+            Err(e) => {
+                println!("restore failed ({e}); fresh login as peregrine-page");
+                match MatrixSession::login(&hs, &user, &pass, "peregrine-page", Some(&store)).await
+                {
+                    Ok(s) => s,
+                    Err(e2) => {
+                        eprintln!("paginate: login failed: {e2}");
+                        std::process::exit(1);
+                    }
+                }
+            }
+        }
+    } else {
+        match MatrixSession::login(&hs, &user, &pass, "peregrine-page", None).await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("paginate: login failed: {e}");
+                std::process::exit(1);
+            }
         }
     };
     if let Err(e) = session.sync_once().await {
