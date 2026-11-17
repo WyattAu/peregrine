@@ -196,13 +196,10 @@ impl MatrixSession {
         // the tokens must persist outside the SDK store for `restore()`
         // to re-enter this exact device. Sidecar written next to the
         // store when a persistent store is in use.
-        if let Some(path) = store_path {
-            let json = serde_json::to_string(&record)
-                .map_err(|e| MatrixError(format!("sidecar serialize: {e}")))?;
-            let sidecar = std::path::Path::new(path).with_extension("session.json");
-            std::fs::write(sidecar, json)
-                .map_err(|e| MatrixError(format!("sidecar write: {e}")))?;
-        }
+        let json = serde_json::to_string(&record)
+            .map_err(|e| MatrixError(format!("sidecar serialize: {e}")))?;
+        let sidecar = std::path::Path::new(&resolved).with_extension("session.json");
+        std::fs::write(sidecar, json).map_err(|e| MatrixError(format!("sidecar write: {e}")))?;
 
         Ok(Self::attach(client, user_id, device))
     }
