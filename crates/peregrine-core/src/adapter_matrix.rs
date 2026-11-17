@@ -550,6 +550,21 @@ impl MatrixSession {
         })
     }
 
+    /// One full default sync: primes the state store (rooms, members,
+    /// account data) so room lists and DM discovery resolve before the
+    /// long-running loop takes over.
+    ///
+    /// # Errors
+    ///
+    /// Substrate errors are carried in [`MatrixError`].
+    pub async fn initial_sync(&self) -> Result<(), MatrixError> {
+        self.client
+            .sync_once(SyncSettings::default())
+            .await
+            .map_err(|e| err("initial sync", e))?;
+        Ok(())
+    }
+
     /// Restore a persisted session from the sqlite store at
     /// `store_path` (same device id, same megolm session keys — no
     /// fresh login). Fails when the store holds no session.
