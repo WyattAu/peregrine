@@ -118,6 +118,8 @@ struct Model {
     backfill_running: bool,
     /// Rooms whose history is known exhausted (`next_from` = `None` seen).
     backfill_done: std::collections::HashSet<String>,
+    /// Server-side joined rooms: (id, display name).
+    server_rooms: Vec<(String, String)>,
     input: String,
     log: VecDeque<String>,
     passes: u64,
@@ -130,8 +132,8 @@ struct Model {
 }
 
 impl Model {
-    fn new(user: String, seed_room: Option<String>) -> Self {
-        Self {
+    fn new(user: String, seed_room: Option<String>, server_rooms: Vec<(String, String)>) -> Self {
+        let mut model = Self {
             user,
             events: VecDeque::new(),
             rooms: Vec::new(),
@@ -143,6 +145,7 @@ impl Model {
             backfill_requested: false,
             backfill_running: false,
             backfill_done: std::collections::HashSet::new(),
+            server_rooms,
             input: String::new(),
             log: VecDeque::new(),
             passes: 0,
@@ -152,6 +155,17 @@ impl Model {
             utd_escalated: 0,
             last_lists: 0,
             last_rooms: 0,
+        };
+        model.select_first_server_room();
+        model
+    }
+
+    /// Select the first server room when nothing is selected yet.
+    fn select_first_server_room(&mut self) {
+        if self.selected.is_none()
+            && let Some(first) = self.server_rooms.first()
+        {
+            self.selected = Some(first.0.clone());
         }
     }
 
@@ -263,7 +277,7 @@ fn handle_key(
             false
         }
         (KeyCode::Enter, _) if model.focus == Focus::Rooms => {
-            let entry = select_entry(model.room_cursor, &model.rooms);
+            let entry = select_entry(model.room_cursor, &model.server_rooms);
             model.selected.clone_from(&entry);
             model.log(match entry {
                 Some(r) => format!("target -> {r}"),
@@ -329,7 +343,7 @@ fn handle_key(
 }
 
 /// Room-list entry under `cursor` (0 = "<all>").
-fn select_entry(cursor: usize, rooms: &[(String, usize)]) -> Option<String> {
+fn select_entry(cursor: usize, rooms: &[(String, String)]) -> Option<String> {
     if cursor == 0 {
         None
     } else {
@@ -460,10 +474,15 @@ fn draw_rooms(f: &mut ratatui::Frame<'_>, model: &Model, area: Rect) {
             Style::default()
         },
     ))];
-    for (room, count) in &model.rooms {
+    for (room, name) in &model.server_rooms {
         let is_cursor = model.room_cursor == lines.len();
         let is_selected = model.selected.as_deref() == Some(room.as_str());
-        let mut span_text = format!("{room} ({count})");
+        let count = model
+            .rooms
+            .iter()
+            .find(|(r, _)| r == room)
+            .map_or(0, |(_, c)| *c);
+        let mut span_text = format!("{name} ({count})");
         if is_selected {
             span_text.insert(0, '*');
         }
@@ -511,7 +530,7 @@ async fn open_session(
     user: &str,
     pass: &str,
     store_override: Option<String>,
-) -> Arc<MatrixSession> {
+) -> (Arc<MatrixSession>, Vec<(String, String)>) {
     let store_path = store_override.unwrap_or_else(|| {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
         let safe_user = user
@@ -523,18 +542,37 @@ async fn open_session(
     let sidecar = std::path::Path::new(&store_path).with_extension("session.json");
     if sidecar.exists() {
         if let Ok(s) = MatrixSession::restore(hs, &store_path).await {
+            let rooms = server_rooms(&s);
             println!("peregrine: session restored from store");
-            return Arc::new(s);
+            return (Arc::new(s), rooms);
         }
         eprintln!("peregrine: restore failed; fresh login");
     }
     match MatrixSession::login(hs, user, pass, "peregrine-tui", Some(&store_path)).await {
-        Ok(s) => Arc::new(s),
+        Ok(s) => {
+            let rooms = server_rooms(&s);
+            (Arc::new(s), rooms)
+        }
         Err(e) => {
             eprintln!("peregrine: login failed: {e}");
             std::process::exit(1);
         }
     }
+}
+
+/// Server-side joined rooms: (id, display name).
+fn server_rooms(session: &MatrixSession) -> Vec<(String, String)> {
+    session
+        .client()
+        .joined_rooms()
+        .into_iter()
+        .map(|room| {
+            let name = room
+                .name()
+                .unwrap_or_else(|| room.room_id().as_str().to_owned());
+            (room.room_id().as_str().to_owned(), name)
+        })
+        .collect()
 }
 
 /// Spawn a backfill request for the selected room when `PageUp` asked
@@ -602,7 +640,15 @@ async fn run() {
     let user = require("PEREGRINE_USER");
     let pass = require("PEREGRINE_PASS");
     let seed_room = env("PEREGRINE_ROOM");
-    let session = open_session(&hs, &user, &pass, env("PEREGRINE_STORE_PATH")).await;
+    let (session, server_rooms) =
+        open_session(&hs, &user, &pass, env("PEREGRINE_STORE_PATH")).await;
+
+    // Prime the store so room lists and DM discovery resolve before the
+    // long-running loop takes over.
+    if session.initial_sync().await.is_err() {
+        eprintln!("peregrine: initial sync failed");
+        std::process::exit(1);
+    }
 
     let (log_tx, mut log_rx) = mpsc::channel::<String>(16);
     // Backfill results: (room id, next token, prepended updates).
@@ -624,7 +670,8 @@ async fn run() {
     };
     let guard = guard;
 
-    let mut model = Model::new(session.user_id().to_owned(), seed_room);
+    let mut model = Model::new(session.user_id().to_owned(), seed_room, server_rooms);
+    model.select_first_server_room();
     model.log("connected; sync loop running");
 
     let mut redraw = tokio::time::interval(Duration::from_millis(REDRAW_MS));
@@ -691,6 +738,10 @@ async fn run() {
     drop(guard);
     let _ = terminal::disable_raw_mode();
     let _ = execute!(std::io::stdout(), terminal::LeaveAlternateScreen);
+    print_summary(&model);
+}
+
+fn print_summary(model: &Model) {
     println!(
         "peregrine: session summary — passes {} | shifts {} | errors {} | events {}",
         model.passes,
