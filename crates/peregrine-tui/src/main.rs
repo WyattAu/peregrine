@@ -110,6 +110,14 @@ struct Model {
     focus: Focus,
     /// Viewport scroll offset from the newest event.
     scroll: usize,
+    /// Next back-pagination token per room (keyed by room id).
+    backfill_tokens: std::collections::HashMap<String, Option<String>>,
+    /// Backfill requested (`PageUp`) but not yet spawned.
+    backfill_requested: bool,
+    /// A backfill request is in flight.
+    backfill_running: bool,
+    /// Rooms whose history is known exhausted (`next_from` = `None` seen).
+    backfill_done: std::collections::HashSet<String>,
     input: String,
     log: VecDeque<String>,
     passes: u64,
@@ -131,6 +139,10 @@ impl Model {
             room_cursor: 0,
             focus: Focus::Timeline,
             scroll: 0,
+            backfill_tokens: std::collections::HashMap::new(),
+            backfill_requested: false,
+            backfill_running: false,
+            backfill_done: std::collections::HashSet::new(),
             input: String::new(),
             log: VecDeque::new(),
             passes: 0,
@@ -297,6 +309,7 @@ fn handle_key(
         }
         (KeyCode::PageUp, _) => {
             model.scroll = model.scroll.saturating_add(PAGE);
+            model.backfill_requested = true;
             false
         }
         (KeyCode::PageDown, _) => {
@@ -490,29 +503,114 @@ fn main() {
     rt.block_on(run());
 }
 
-async fn run() {
-    let hs = require("PEREGRINE_HS_URL");
-    let user = require("PEREGRINE_USER");
-    let pass = require("PEREGRINE_PASS");
-    let seed_room = env("PEREGRINE_ROOM");
-
-    let session = match MatrixSession::login(
-        &hs,
-        &user,
-        &pass,
-        "peregrine-tui",
-        env("PEREGRINE_STORE_PATH").as_deref(),
-    )
-    .await
-    {
+/// Restore-first session open: reuse the persisted device (identity +
+/// megolm keys) when a sidecar exists; fresh login otherwise. The
+/// store lives under the user's data home keyed by user + device.
+async fn open_session(
+    hs: &str,
+    user: &str,
+    pass: &str,
+    store_override: Option<String>,
+) -> Arc<MatrixSession> {
+    let store_path = store_override.unwrap_or_else(|| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_owned());
+        let safe_user = user
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect::<String>();
+        format!("{home}/.local/share/peregrine/store-{safe_user}-peregrine-tui")
+    });
+    let sidecar = std::path::Path::new(&store_path).with_extension("session.json");
+    if sidecar.exists() {
+        if let Ok(s) = MatrixSession::restore(hs, &store_path).await {
+            println!("peregrine: session restored from store");
+            return Arc::new(s);
+        }
+        eprintln!("peregrine: restore failed; fresh login");
+    }
+    match MatrixSession::login(hs, user, pass, "peregrine-tui", Some(&store_path)).await {
         Ok(s) => Arc::new(s),
         Err(e) => {
             eprintln!("peregrine: login failed: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Spawn a backfill request for the selected room when `PageUp` asked
+/// for one and that room's history isn't exhausted yet.
+fn maybe_spawn_backfill(
+    model: &mut Model,
+    session: &Arc<MatrixSession>,
+    bf_tx: &mpsc::Sender<(String, Option<String>, Vec<TimelineUpdate>)>,
+) {
+    if model.backfill_running
+        || !model.backfill_requested
+        || model
+            .backfill_done
+            .contains(model.selected.as_deref().unwrap_or(""))
+        || model.selected.is_none()
+    {
+        return;
+    }
+    let Some(room) = model.selected.clone() else {
+        return;
     };
+    let token = model.backfill_tokens.get(&room).cloned().flatten();
+    let session = Arc::clone(session);
+    let tx = bf_tx.clone();
+    model.backfill_running = true;
+    model.backfill_requested = false;
+    tokio::spawn(async move {
+        let rid = RoomId::new(room.as_str());
+        let page = session.paginate_history(&rid, token.as_deref(), 30).await;
+        let (next_from, updates) = match page {
+            Ok(p) => (p.next_from, p.updates),
+            Err(e) => {
+                eprintln!("backfill failed: {e}");
+                (None, Vec::new())
+            }
+        };
+        let _ = tx.send((room, next_from, updates)).await;
+    });
+}
+
+/// Apply one backfill page: mark running cleared, record the
+/// exhaustion state, and prepend oldest-first so chronology holds.
+fn apply_backfill(
+    model: &mut Model,
+    room: &str,
+    next_from: Option<&String>,
+    updates: &[TimelineUpdate],
+) {
+    model.backfill_running = false;
+    if let Some(tok) = next_from {
+        model
+            .backfill_tokens
+            .insert(room.to_owned(), Some(tok.clone()));
+    } else {
+        model.backfill_done.insert(room.to_owned());
+        model.log("history exhausted for this room");
+    }
+    for u in updates.iter().rev() {
+        model.events.push_front(u.clone());
+    }
+}
+
+async fn run() {
+    let hs = require("PEREGRINE_HS_URL");
+    let user = require("PEREGRINE_USER");
+    let pass = require("PEREGRINE_PASS");
+    let seed_room = env("PEREGRINE_ROOM");
+    let session = open_session(&hs, &user, &pass, env("PEREGRINE_STORE_PATH")).await;
 
     let (log_tx, mut log_rx) = mpsc::channel::<String>(16);
+    // Backfill results: (room id, next token, prepended updates).
+    let (bf_tx, mut bf_rx) = mpsc::channel::<(
+        String,
+        Option<String>,
+        Vec<peregrine_core::protocol::TimelineUpdate>,
+    )>(4);
     let mut loop_handle: LoopHandle = spawn_sync_loop(Arc::clone(&session), &LoopCfg::default());
     let mut input_rx = spawn_input_pump();
 
@@ -563,12 +661,18 @@ async fn run() {
                     model.log(line);
                 }
             },
+            ev = bf_rx.recv() => {
+                if let Some((room, next_from, updates)) = ev {
+                    apply_backfill(&mut model, &room, next_from.as_ref(), &updates);
+                }
+            },
             ev = input_rx.recv() => {
                 match ev {
                     Some(Event::Key(key)) => {
                         if handle_key(&mut model, key, &session, &log_tx, &loop_handle) {
                             break;
                         }
+                        maybe_spawn_backfill(&mut model, &session, &bf_tx);
                     }
                     Some(_) => {}
                     None => break,
