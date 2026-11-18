@@ -5,6 +5,10 @@
 version = 2
 yanked = "deny"
 ignore = [
+    # chrono (unmaintained; RUSTSEC-2026-0543) transitive via matrix-sdk
+    # 0.19 — no safe upgrade exists on our pin. Unmaintained advisory
+    # only, no vulnerability. Revisit when matrix-sdk drops chrono.
+    "RUSTSEC-2026-0543",
     # anymap2 (unmaintained; RUSTSEC-2026-0319) via matrix-sdk 0.19 — no safe
     # upgrade exists; estate precedent: clawdius carries the same ignore
     # (8150c6e). Revisit when matrix-sdk migrates to anymap3.
