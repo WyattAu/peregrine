@@ -220,7 +220,6 @@ async fn drive_ready_then_verify(
     let client = session.client().clone();
     let mut sas: Option<SasVerification> = None;
     let mut emojis: Option<[Emoji; 7]> = None;
-    let mut emojis_at: Option<tokio::time::Instant> = None;
     let mut confirmed = false;
 
     for _ in 0..max_cycles {
@@ -252,15 +251,12 @@ async fn drive_ready_then_verify(
                     println!("emoji   {}  {} {}", i + 1, emoji.symbol, emoji.description);
                 }
                 emojis = Some(list);
-                emojis_at = Some(tokio::time::Instant::now());
-                println!("ACTION on peer screen: compare emojis, tap match (grace {grace:?})");
             }
-            // Confirm after the grace window so the peer taps first.
-            if !confirmed
-                && emojis.is_some()
-                && emojis_at.is_some_and(|t| t.elapsed() >= grace)
-                && s.confirm().await.is_ok()
-            {
+            // Confirm as soon as the string is presentable: our MAC is
+            // sent immediately and the flow completes when the peer's
+            // MAC arrives — their tap timing is irrelevant to
+            // correctness, so no grace window is needed.
+            if emojis.is_some() && !confirmed && s.confirm().await.is_ok() {
                 confirmed = true;
                 println!("confirm ok  ours sent");
             }

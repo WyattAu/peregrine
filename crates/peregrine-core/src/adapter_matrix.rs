@@ -171,6 +171,15 @@ impl MatrixSession {
                 safe(device_name)
             )
         };
+        // INVARIANT: a persistent store is device-locked — its olm
+        // account matches the original login only. When a session
+        // sidecar exists, re-enter THAT device; a fresh login onto an
+        // occupied store fails with an identity mismatch (measured).
+        let sidecar = std::path::Path::new(&resolved).with_extension("session.json");
+        if sidecar.exists() {
+            return Self::restore(homeserver_url, &resolved).await;
+        }
+
         let client = Client::builder()
             .homeserver_url(url)
             .sqlite_store(&resolved, None)
