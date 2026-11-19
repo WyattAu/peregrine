@@ -41,8 +41,6 @@ const SCAN_CYCLES: usize = 15;
 const SYNC_TIMEOUT: Duration = Duration::from_secs(1);
 /// Step wait.
 const STEP_WAIT: Duration = Duration::from_secs(1);
-/// Grace window after printing emojis, so the human can compare and
-/// tap on the peer's screen before our confirm lands.
 
 fn env(name: &str) -> Option<String> {
     match std::env::var(name) {
