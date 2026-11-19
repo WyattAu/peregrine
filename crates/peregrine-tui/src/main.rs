@@ -416,9 +416,21 @@ fn draw(f: &mut ratatui::Frame<'_>, model: &Model) {
     let lines: Vec<Line<'_>> = view[start..end]
         .iter()
         .map(|u| {
+            // Mention highlight: messages mentioning us (or @room) from
+            // other senders render amber — the visual half of the
+            // notification rule.
+            let is_mention = u.sender.as_str() != model.user
+                && (u.body.contains("@peregrine-test") || u.body.contains("@room"));
+            let body_style = if is_mention {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
             Line::from(vec![
                 Span::styled(format!("{} ", u.sender), Style::default().fg(Color::Blue)),
-                Span::raw(&u.body),
+                Span::styled(&u.body, body_style),
             ])
         })
         .collect();
