@@ -120,6 +120,8 @@ struct Model {
     backfill_done: std::collections::HashSet<String>,
     /// Server-side joined rooms: (id, display name).
     server_rooms: Vec<(String, String)>,
+    /// Unread event counts per room id (rooms without traffic absent).
+    unread: std::collections::HashMap<String, usize>,
     input: String,
     log: VecDeque<String>,
     passes: u64,
@@ -146,6 +148,7 @@ impl Model {
             backfill_running: false,
             backfill_done: std::collections::HashSet::new(),
             server_rooms,
+            unread: std::collections::HashMap::new(),
             input: String::new(),
             log: VecDeque::new(),
             passes: 0,
@@ -186,6 +189,18 @@ impl Model {
 
     fn push_event(&mut self, u: TimelineUpdate) {
         self.note_room(u.room.as_str());
+        // Notification rule v0: events for rooms other than the one on
+        // screen count as unread; direct mentions of our localpart or
+        // @room surface in the log (desktop notifications: phase 2).
+        let is_visible = self.selected.as_deref() == Some(u.room.as_str());
+        if !is_visible {
+            *self.unread.entry(u.room.as_str().to_owned()).or_insert(0) += 1;
+        }
+        if u.sender.as_str() != self.user
+            && (u.body.contains("@room") || u.body.contains("@peregrine-test"))
+        {
+            self.log(format!("MENTION from {} in {}", u.sender, u.room));
+        }
         if self.events.len() >= EVENT_CAP {
             self.events.pop_front();
         }
@@ -279,6 +294,9 @@ fn handle_key(
         (KeyCode::Enter, _) if model.focus == Focus::Rooms => {
             let entry = select_entry(model.room_cursor, &model.server_rooms);
             model.selected.clone_from(&entry);
+            if let Some(r) = &entry {
+                model.unread.remove(r);
+            }
             model.log(match entry {
                 Some(r) => format!("target -> {r}"),
                 None => "target -> all (read-only)".to_owned(),
@@ -482,11 +500,17 @@ fn draw_rooms(f: &mut ratatui::Frame<'_>, model: &Model, area: Rect) {
             .iter()
             .find(|(r, _)| r == room)
             .map_or(0, |(_, c)| *c);
+        let unread = model.unread.get(room).copied().unwrap_or(0);
         let mut span_text = format!("{name} ({count})");
+        if unread > 0 {
+            span_text = format!("{span_text} [{unread} unread]");
+        }
         if is_selected {
             span_text.insert(0, '*');
         }
-        let style = if is_cursor && focused {
+        let style = if unread > 0 {
+            Style::default().fg(Color::LightRed)
+        } else if is_cursor && focused {
             Style::default()
                 .fg(Color::Cyan)
                 .add_modifier(Modifier::BOLD)
