@@ -7,6 +7,10 @@ members = [
     "crates/peregrine-dst",
     "crates/peregrine-ui-core",
     "crates/peregrine-tui",
+    # peregrine-gui is EXCLUDED (standalone lockfile): ratatui 0.29 pins
+    # unicode-width "=0.2.0" (yanked from crates.io) which conflicts with
+    # slint's annotate-snippets ^0.2.2 — see ADR 0001 spike notes and
+    # ROADMAP phase-2 row. Rejoin the workspace once ratatui relaxes the pin.
 ]
 
 [workspace.package]

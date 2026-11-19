@@ -1,0 +1,30 @@
+[package]
+name = "peregrine-gui"
+description = "Peregrine desktop GUI shell (phase 2): Slint spike per ADR 0001"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/WyattAu/peregrine"
+rust-version = "1.97.0"
+
+# Standalone lockfile; see the STANDALONE note below.
+[workspace]
+
+# STANDALONE (not a workspace member): ratatui 0.29 — present in the main
+# workspace via peregrine-tui — pins unicode-width "=0.2.0", a yanked
+# crates.io release, which cannot coexist with slint's annotate-snippets
+# (^0.12.9 -> ^0.2.2) in one resolution graph. This crate keeps its own
+# lockfile until ratatui relaxes the pin. See docs/adr/0001 + ROADMAP.
+
+[dependencies]
+slint = "1.19"
+
+[build-dependencies]
+slint-build = "1.19"
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+print_stdout = "allow"
+print_stderr = "allow"
