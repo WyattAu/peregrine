@@ -24,6 +24,7 @@
 
 use std::cell::Cell;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::time::{Duration, Instant};
 
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
@@ -33,7 +34,13 @@ slint::include_modules!();
 const EVENT_COUNT: usize = 10_000;
 const ROOM_COUNT: usize = 20;
 const BENCH_FRAMES: usize = 600;
-const BENCH_TICK: Duration = Duration::from_millis(16);
+// Tick cadence, override with PEREGRINE_BENCH_TICK_MS: 16 mimics a
+// 60 Hz frame budget; smaller ticks isolate render cost from tick jitter
+// (vsync caps real frames at the display refresh rate).
+const BENCH_TICK: Duration = Duration::from_millis(
+    u64::from_str(&std::env::var("PEREGRINE_BENCH_TICK_MS").unwrap_or_default())
+        .unwrap_or(16),
+);
 
 fn main() {
     let t0 = Instant::now();
