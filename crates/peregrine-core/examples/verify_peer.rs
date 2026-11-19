@@ -1,8 +1,9 @@
 //! Cross-client SAS verification: peregrine requests verification of
 //! a REMOTE client device (e.g. Element X on the phone), prints its
 //! short auth string for the human to compare against the peer's
-//! display, and completes the flow (grace window for the peer to tap
-//! match on their screen first).
+//! display, and completes the flow (our MAC is sent as soon as the
+//! short auth string is presentable; the flow completes when the
+//! peer's MAC arrives — tap timing on the peer is irrelevant).
 //!
 //! Modes:
 //! - default: scan — send to-device requests to every unverified peer
@@ -16,7 +17,7 @@
 //! ```text
 //! PEREGRINE_HS_URL=... PEREGRINE_USER=... PEREGRINE_PASS=... \
 //! PEREGRINE_PEER=@user:remote.example \
-//! cargo run -p peregrine-core --example verify_peer -- [grace-seconds]
+//! cargo run -p peregrine-core --example verify_peer
 //! ```
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
@@ -42,7 +43,6 @@ const SYNC_TIMEOUT: Duration = Duration::from_secs(1);
 const STEP_WAIT: Duration = Duration::from_secs(1);
 /// Grace window after printing emojis, so the human can compare and
 /// tap on the peer's screen before our confirm lands.
-const DEFAULT_GRACE: u64 = 30;
 
 fn env(name: &str) -> Option<String> {
     match std::env::var(name) {
@@ -79,10 +79,6 @@ async fn run() {
     let user = require("PEREGRINE_USER");
     let pass = require("PEREGRINE_PASS");
     let peer = require("PEREGRINE_PEER");
-    let grace = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_GRACE);
     let peer_id = match UserId::parse(&peer) {
         Ok(u) => u,
         Err(e) => die("bad PEREGRINE_PEER", e),
@@ -100,7 +96,7 @@ async fn run() {
     }
 
     let ok = if env("PEREGRINE_VIA").as_deref() == Some("user") {
-        verify_via_identity(&session, &peer_id, grace).await
+        verify_via_identity(&session, &peer_id).await
     } else {
         let targets: Vec<OwnedDeviceId> = match env("PEREGRINE_PEER_DEVICE") {
             Some(id) => vec![OwnedDeviceId::from(id)],
@@ -117,7 +113,7 @@ async fn run() {
                 })
                 .unwrap_or_default(),
         };
-        verify_via_scan(&session, &peer_id, targets, grace).await
+        verify_via_scan(&session, &peer_id, targets).await
     };
 
     if ok {
@@ -129,7 +125,7 @@ async fn run() {
 }
 
 /// User-identity verification path: DM-room in-room request.
-async fn verify_via_identity(session: &MatrixSession, peer_id: &UserId, grace: u64) -> bool {
+async fn verify_via_identity(session: &MatrixSession, peer_id: &UserId) -> bool {
     let Some(identity) = session
         .client()
         .encryption()
@@ -148,8 +144,7 @@ async fn verify_via_identity(session: &MatrixSession, peer_id: &UserId, grace: u
     println!(
         "ACTION on phone: open the new room from @peregrine-test, accept the verification request"
     );
-    let (done, cancelled, our_done) =
-        drive_ready_then_verify(session, request, Duration::from_secs(grace), MAX_CYCLES).await;
+    let (done, cancelled, our_done) = drive_ready_then_verify(session, request, MAX_CYCLES).await;
     let trust = session
         .client()
         .encryption()
@@ -165,7 +160,6 @@ async fn verify_via_scan(
     session: &MatrixSession,
     peer_id: &UserId,
     targets: Vec<OwnedDeviceId>,
-    grace: u64,
 ) -> bool {
     for dev_id in targets {
         let Some(dev) = session
@@ -189,8 +183,7 @@ async fn verify_via_scan(
         println!("request ok  flow {} -> {dev_id}", request.flow_id());
         println!("ACTION on phone: if Element X shows a verification request, accept it");
         let (done, cancelled, our_done) =
-            drive_ready_then_verify(session, request, Duration::from_secs(grace), SCAN_CYCLES)
-                .await;
+            drive_ready_then_verify(session, request, SCAN_CYCLES).await;
         let trust = session
             .client()
             .encryption()
@@ -209,12 +202,11 @@ async fn verify_via_scan(
 }
 
 /// Drive the verifier side: wait for the peer to ready the request,
-/// open SAS, print emojis, wait the grace window, confirm. Returns
-/// (`flow_done`, `cancelled`, `our_done`).
+/// open SAS, print emojis, confirm. Returns (`flow_done`, `cancelled`,
+/// `our_done`).
 async fn drive_ready_then_verify(
     session: &MatrixSession,
     request: VerificationRequest,
-    grace: Duration,
     max_cycles: usize,
 ) -> (bool, bool, bool) {
     let client = session.client().clone();
