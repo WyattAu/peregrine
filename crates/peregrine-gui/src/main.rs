@@ -424,7 +424,76 @@ fn live(t0: Instant) {
         });
     }
 
+    // System tray: Show/Hide/Quit; menu events pumped from the same
+    // polling pattern as the sync bridge.
+    build_tray(win.as_weak());
+
     let _ = win.run();
+}
+
+/// Solid 32x32 RGBA tray icon (v0: peregrine teal square; a drawn
+/// falcon lands with the real icon set).
+fn tray_icon_rgba() -> tray_icon::Icon {
+    const W: u32 = 32;
+    const H: u32 = 32;
+    let mut rgba = Vec::with_capacity((W * H * 4) as usize);
+    for y in 0..H {
+        for x in 0..W {
+            // Rounded-corner mask so the square reads as an app icon.
+            let edge = (x < 3 || x >= W - 3) && (y < 3 || y >= H - 3);
+            let (r, g, b, a) = if edge {
+                (0, 0, 0, 0)
+            } else {
+                (0x1b, 0x8c, 0xf0, 0xff)
+            };
+            rgba.extend_from_slice(&[r, g, b, a]);
+        }
+    }
+    tray_icon::Icon::from_rgba(rgba, W, H).expect("tray icon: static RGBA")
+}
+
+fn build_tray(win: slint::Weak<SpikeWindow>) {
+    use tray_icon::menu::{Menu, MenuEvent, MenuItem};
+    let show = MenuItem::new("Show", true, None);
+    let hide = MenuItem::new("Hide", true, None);
+    let show_id = show.id().clone();
+    let hide_id = hide.id().clone();
+    let mut menu = Menu::new();
+    let _ = menu.append(&show);
+    let _ = menu.append(&hide);
+    let tray = tray_icon::TrayIconBuilder::new()
+        .with_tooltip("peregrine")
+        .with_icon(tray_icon_rgba())
+        .with_menu(Box::new(menu))
+        .build();
+    let tray = match tray {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("tray: unavailable ({e}); continuing without");
+            return;
+        }
+    };
+    std::mem::forget(tray); // tray must outlive the window
+
+    let menu_rx = MenuEvent::receiver();
+    let pump = Timer::default();
+    pump.start(
+        TimerMode::Repeated,
+        Duration::from_millis(100),
+        move || {
+            while let Ok(ev) = menu_rx.try_recv() {
+                let Some(w) = win.upgrade() else {
+                    return;
+                };
+                if ev.id() == &show_id {
+                    let _ = w.show();
+                } else if ev.id() == &hide_id {
+                    let _ = w.hide();
+                }
+            }
+        },
+    );
+    std::mem::forget(pump); // must outlive the callback borrows
 }
 
 fn to_item(u: &TimelineUpdate, me_mxid: &str) -> TimelineItem {
@@ -435,8 +504,9 @@ fn to_item(u: &TimelineUpdate, me_mxid: &str) -> TimelineItem {
         .next()
         .unwrap_or("")
         .trim_start_matches('@');
+    let at_localpart = format!("@{my_localpart}");
     let mention = u.sender.as_str() != me_mxid
-        && (u.body.contains("@room") || u.body.contains(my_localpart));
+        && (u.body.contains("@room") || u.body.contains(&at_localpart));
     TimelineItem {
         sender: u.sender.clone().into(),
         body: u.body.clone().into(),

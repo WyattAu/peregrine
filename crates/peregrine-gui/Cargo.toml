@@ -24,6 +24,10 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 # Desktop notifications over the freedesktop Notifications D-Bus API
 # (KDE plasmashell). zbus stack shares slint's existing zvariant deps.
 notify-rust = { version = "4", default-features = false, features = ["z"] }
+# System tray (StatusNotifierItem via libappindicator; dlopen'd at
+# runtime — the installed libappindicator3.so.1 is found, no ayatana
+# package required).
+tray-icon = "0.19"
 
 [build-dependencies]
 slint-build = "1.19"
