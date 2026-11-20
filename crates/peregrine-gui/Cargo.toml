@@ -18,6 +18,9 @@ rust-version = "1.97.0"
 
 [dependencies]
 slint = "1.19"
+# Phase-2 core wiring (ADR 0001): same protocol substrate as the TUI.
+peregrine-core = { path = "../peregrine-core" }
+tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [build-dependencies]
 slint-build = "1.19"
