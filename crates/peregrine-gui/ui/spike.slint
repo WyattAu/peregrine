@@ -17,7 +17,7 @@ export struct TimelineItem {
 }
 
 export component SpikeWindow inherits Window {
-    title: "peregrine — ADR 0001 spike";
+    title: "peregrine";
     preferred-width: 1280px;
     preferred-height: 800px;
     background: #1b1e23;
@@ -28,7 +28,7 @@ export component SpikeWindow inherits Window {
     in-out property <length> timeline-scroll-y;
     out property <int> sent-count;
     // Content height minus viewport height — the bench's scroll range.
-    out property <length> scroll-range: Math.max(0px, lv.viewport-height - lv.height);
+    out property <length> scroll-range: Math.max(0px, lv.content-height - lv.height);
 
     callback room-selected(int);
     callback send(string);
@@ -79,7 +79,7 @@ export component SpikeWindow inherits Window {
             padding: 8px;
             spacing: 8px;
             lv := ListView {
-                viewport-y <=> timeline-scroll-y;
+                content-y <=> timeline-scroll-y;
                 for msg in timeline: Rectangle {
                     height: 28px;
                     HorizontalLayout {

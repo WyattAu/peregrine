@@ -99,7 +99,13 @@ async fn connect() -> Result<(Arc<MatrixSession>, Vec<(String, String)>), String
     let sidecar = std::path::Path::new(&path).with_extension("session.json");
     if sidecar.exists() {
         if let Ok(s) = MatrixSession::restore(&hs, &path).await {
-            let rooms = server_rooms(&s);
+            // Restored state stores still need a sync pass to load
+            // room member state (display names, DM flags) before the
+            // room list renders usefully.
+            if let Err(e) = s.initial_sync().await {
+                eprintln!("initial_sync after restore failed: {e}");
+            }
+            let rooms = server_rooms(&s).await;
             println!("login   ok (restored {})", s.user_id());
             return Ok((Arc::new(s), rooms));
         }
@@ -109,23 +115,28 @@ async fn connect() -> Result<(Arc<MatrixSession>, Vec<(String, String)>), String
         .await
         .map_err(|e| format!("login failed: {e}"))?;
     s.initial_sync().await.map_err(|e| format!("sync: {e}"))?;
-    let rooms = server_rooms(&s);
+    let rooms = server_rooms(&s).await;
     println!("login   ok (fresh {})", s.user_id());
     Ok((Arc::new(s), rooms))
 }
 
-fn server_rooms(session: &MatrixSession) -> Vec<(String, String)> {
-    session
-        .client()
-        .joined_rooms()
-        .into_iter()
-        .map(|room| {
-            let name = room
-                .name()
-                .unwrap_or_else(|| room.room_id().as_str().to_owned());
-            (room.room_id().as_str().to_owned(), name)
-        })
-        .collect()
+async fn server_rooms(session: &MatrixSession) -> Vec<(String, String)> {
+    // Sort DMs first so the seed room (first entry) is the DM.
+    let mut rooms: Vec<(bool, (String, String))> = Vec::new();
+    for room in session.client().joined_rooms() {
+        let id = room.room_id().as_str().to_owned();
+        let is_dm = room.is_direct().await.unwrap_or(false);
+        let name = match room.display_name().await {
+            Ok(dn) => {
+                let n = dn.to_string();
+                if n.is_empty() || n == "Empty" { id.clone() } else { n }
+            }
+            Err(_) => id.clone(),
+        };
+        rooms.push((is_dm, (id, name)));
+    }
+    rooms.sort_by_key(|(is_dm, _)| std::cmp::Reverse(*is_dm));
+    rooms.into_iter().map(|(_, pair)| pair).collect()
 }
 
 /// One backward page for a room, delivered through the bridge.
@@ -466,7 +477,7 @@ fn build_tray(win: slint::Weak<SpikeWindow>) {
     let hide = MenuItem::new("Hide", true, None);
     let show_id = show.id().clone();
     let hide_id = hide.id().clone();
-    let mut menu = Menu::new();
+    let menu = Menu::new();
     let _ = menu.append(&show);
     let _ = menu.append(&hide);
     let tray = tray_icon::TrayIconBuilder::new()

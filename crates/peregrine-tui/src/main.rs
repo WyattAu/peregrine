@@ -308,7 +308,11 @@ fn handle_key(
             match model.selected.as_deref() {
                 Some(room) if !body.is_empty() => {
                     spawn_send(session, room, body, log_tx.clone());
-                    true
+                    // Send-and-stay: the receipt lands in the log pane
+                    // on the next tick. (Historical bug: this arm
+                    // returned true = quit, killing the app on every
+                    // successful send — live-verified 2026-11-20.)
+                    false
                 }
                 Some(_) => {
                     model.log("empty message; not sent");
