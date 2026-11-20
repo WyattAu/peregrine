@@ -265,10 +265,12 @@ fn spawn_send(
     let session = Arc::clone(session);
     let room = RoomId::new(room.to_owned());
     tokio::spawn(async move {
+        eprintln!("send: task started room={room}");
         let line = match session.send_message(&room, &body).await {
             Ok(receipt) => format!("sent txn {}", receipt.txn_id),
             Err(e) => format!("send failed: {e}"),
         };
+        eprintln!("send: task done -> {line}");
         let _ = log_tx.send(line).await;
     });
 }
@@ -582,6 +584,14 @@ async fn open_session(
     let sidecar = std::path::Path::new(&store_path).with_extension("session.json");
     if sidecar.exists() {
         if let Ok(s) = MatrixSession::restore(hs, &store_path).await {
+            // Sync before the room list: loads member state (names)
+            // and primes the client so the SDK send queue flushes on
+            // the first pass instead of holding sends until a completed
+            // sync (live-caught: sends silently queued when the loop's
+            // first longpoll outlasted the user's patience).
+            if let Err(e) = s.initial_sync().await {
+                eprintln!("peregrine: initial_sync after restore failed: {e}");
+            }
             let rooms = server_rooms(&s);
             println!("peregrine: session restored from store");
             return (Arc::new(s), rooms);

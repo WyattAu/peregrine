@@ -655,10 +655,22 @@ impl ProtocolSession for MatrixSession {
         let txn_id = format!("peregrine.{}.{}.{}", self.device, room.as_str(), seq);
         let rid =
             matrix_sdk::ruma::RoomId::parse(room.as_str()).map_err(|e| err("room id parse", e))?;
-        let target = self
-            .client
-            .get_room(&rid)
-            .ok_or_else(|| MatrixError(format!("room not in state: {room}")))?;
+        // The room must be in client state; a freshly restored session
+        // may not have synced yet. Self-heal with one bounded sync pass
+        // before failing (live-caught: frontend sends raced the sync
+        // loop's first pass and failed with "room not in state").
+        let target = match self.client.get_room(&rid) {
+            Some(room) => room,
+            None => {
+                self.client
+                    .sync_once(SyncSettings::default())
+                    .await
+                    .map_err(|e| err("send pre-sync", e))?;
+                self.client
+                    .get_room(&rid)
+                    .ok_or_else(|| MatrixError(format!("room not in state: {room}")))?
+            }
+        };
         let content = RoomMessageEventContent::text_plain(body);
         target
             .send(content)

@@ -395,6 +395,10 @@ fn live(t0: Instant) {
                                     }
                                 }
                             }
+                            // Release the mutable buffer borrow BEFORE
+                            // render_room re-borrows it (live-caught
+                            // RefCell double-borrow on first echo).
+                            drop(buffers);
                             if dirty_selected {
                                 render_room();
                             }
