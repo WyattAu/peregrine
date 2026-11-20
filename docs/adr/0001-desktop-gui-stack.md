@@ -1,6 +1,6 @@
 # ADR 0001: Use Slint for the Desktop GUI Shell
 
-- **Status:** Proposed (spike-gated)
+- **Status:** Accepted (spike gate passed 2026-11-20)
 - **Date:** 2026-11-17
 - **Deciders:** Peregrine team
 
@@ -54,6 +54,23 @@ not a framework-selection criterion.
   power-user/SSH surface, so both frontends are maintained.
 - **Verification UX:** Device verification (emoji SAS compare) renders
   natively in Slint — no webview round-trip.
+
+## Spike Results (gate evidence, 2026-11-20, `peregrine-gui` a794d9f)
+
+| Gate criterion | Budget | Measured | Verdict |
+|---|---|---|---|
+| Three-pane layout (rooms/timeline/composer) | renders | `.slint` compiles + renders on KDE Wayland and Xvfb | PASS |
+| Cold start | < 200 ms | 175 ms (Wayland) / 85 ms (Xvfb) | PASS |
+| 10k-event timeline scroll | 60 FPS | **60.2 fps — software GL (LLVMpipe) under system load 6–9, Xvfb** | PASS |
+
+The scroll number is worst-case: femtovg fell back to software rendering
+offscreen, and the machine carried the user's game + browser load
+during the run. A GPU-backed render on an idle desktop has headroom.
+Live-display runs measured 20–53 fps under the same load — compositor
+/vsync/focus interaction, not renderer capability; re-confirm on an
+idle desktop when `peregrine-gui` development starts in earnest.
+License terms (RF Desktop License) accepted per kestrel precedent; the
+Iced fallback clause remains in force only if those terms change.
 
 ## Alternatives Considered
 
