@@ -21,6 +21,9 @@ slint = "1.19"
 # Phase-2 core wiring (ADR 0001): same protocol substrate as the TUI.
 peregrine-core = { path = "../peregrine-core" }
 tokio = { version = "1", features = ["rt-multi-thread"] }
+# Desktop notifications over the freedesktop Notifications D-Bus API
+# (KDE plasmashell). zbus stack shares slint's existing zvariant deps.
+notify-rust = { version = "4", default-features = false, features = ["z"] }
 
 [build-dependencies]
 slint-build = "1.19"

@@ -215,6 +215,7 @@ fn live(t0: Instant) {
 
     // Room pane: ids parallel to the model so selection maps to ids.
     let room_ids: Vec<String> = rooms.iter().map(|(id, _)| id.clone()).collect();
+    let room_names: HashMap<String, String> = rooms.iter().cloned().collect();
     let room_model = Rc::new(VecModel::from(
         rooms
             .iter()
@@ -357,7 +358,19 @@ fn live(t0: Instant) {
                                         || u.body.contains("@peregrine-test")
                                         || u.body.contains(&me))
                                 {
-                                    println!("mention  from {} in {}", u.sender, u.room.as_str());
+                                    let room = u.room.as_str().to_owned();
+                                    println!("mention  from {} in {}", u.sender, room);
+                                    let title = room_names.get(&room).cloned().unwrap_or(room.clone());
+                                    let body = format!("{}: {}", u.sender, u.body);
+                                    // Off the UI thread: freedesktop
+                                    // Notifications D-Bus round-trip.
+                                    std::thread::spawn(move || {
+                                        let _ = notify_rust::Notification::new()
+                                            .summary("peregrine — mention")
+                                            .body(&format!("[{title}] {body}"))
+                                            .timeout(8_000)
+                                            .show();
+                                    });
                                 }
                             }
                             // Room badges.
