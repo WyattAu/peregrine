@@ -26,7 +26,9 @@ tokio = { version = "1", features = ["rt-multi-thread"] }
 notify-rust = { version = "4", default-features = false, features = ["z"] }
 # System tray (StatusNotifierItem via libappindicator; dlopen'd at
 # runtime — the installed libappindicator3.so.1 is found, no ayatana
-# package required).
+# package required). Must match tray-icon's internal gtk version;
+# live() calls gtk::init on the main thread before building the tray.
+gtk = "0.18"
 tray-icon = "0.19"
 
 [build-dependencies]

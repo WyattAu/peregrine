@@ -425,7 +425,15 @@ fn live(t0: Instant) {
     }
 
     // System tray: Show/Hide/Quit; menu events pumped from the same
-    // polling pattern as the sync bridge.
+    // polling pattern as the sync bridge. GTK must be initialized on
+    // the main thread before the appindicator backend touches it —
+    // live-verified failure mode: without init the shell panics at
+    // startup (gtk-0.18 menu.rs assertion).
+    #[cfg(target_os = "linux")]
+    if gtk::init().is_err() {
+        eprintln!("tray: gtk init failed; continuing without tray");
+        return;
+    }
     build_tray(win.as_weak());
 
     let _ = win.run();

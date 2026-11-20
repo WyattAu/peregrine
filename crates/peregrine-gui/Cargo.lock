@@ -5203,6 +5203,7 @@ version = "0.1.0"
 name = "peregrine-gui"
 version = "0.1.0"
 dependencies = [
+ "gtk",
  "notify-rust",
  "peregrine-core",
  "slint",
