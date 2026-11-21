@@ -43,14 +43,32 @@ criteria = "safe-to-deploy"
 version = "1.5.1"
 notes = "Zero unsafe. Spawns `rustc` as its documented build-probe purpose (invoked only from consumers' build scripts). No network/fs beyond compile-time probes. Canonical (cuviper)."
 
+[[audits.base16ct]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "1.0.0"
+notes = "No build.rs. 4 unsafe mentions in documented fixed-length encoder fast paths. Pure hex encoding, no I/O. RustCrypto organization."
+
 [[audits.base64]]
 who = "WyattAu agent audit (GLM-5.3-Flash)"
 criteria = "safe-to-deploy"
 version = "0.22.1"
 notes = "No build.rs. 4 unsafe mentions in documented simd/lookup fast paths. No network/process/fs surface. Ecosystem-canonical (marshallpierce)."
 
+[[audits.base64ct]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "1.8.3"
+notes = "No build.rs. 10 unsafe mentions in length-checked encoder paths. Pure base64 encoding, no I/O, const-friendly API. RustCrypto organization."
+
 [[audits.bitflags]]
 who = "WyattAu agent audit (GLM-5.3-Flash)"
 criteria = "safe-to-deploy"
 version = "2.13.2"
 notes = "No build.rs. 4 unsafe mentions in macro-generated flag accessors. No syscall surface. Canonical bitflags project."
+
+[[audits.block-buffer]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "0.12.1"
+notes = "No build.rs. 22 unsafe mentions in fixed-capacity buffer ops (the crate's purpose, invariants documented). No I/O. RustCrypto organization."

@@ -67,16 +67,8 @@ criteria = "safe-to-deploy"
 version = "1.6.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.base16ct]]
-version = "1.0.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.base64]]
 version = "0.23.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.base64ct]]
-version = "1.8.3"
 criteria = "safe-to-deploy"
 
 [[exemptions.blake3]]
@@ -85,10 +77,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.block-buffer]]
 version = "0.10.4"
-criteria = "safe-to-deploy"
-
-[[exemptions.block-buffer]]
-version = "0.12.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.block-padding]]
