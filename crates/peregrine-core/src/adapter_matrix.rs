@@ -659,17 +659,16 @@ impl ProtocolSession for MatrixSession {
         // may not have synced yet. Self-heal with one bounded sync pass
         // before failing (live-caught: frontend sends raced the sync
         // loop's first pass and failed with "room not in state").
-        let target = match self.client.get_room(&rid) {
-            Some(room) => room,
-            None => {
-                self.client
-                    .sync_once(SyncSettings::default())
-                    .await
-                    .map_err(|e| err("send pre-sync", e))?;
-                self.client
-                    .get_room(&rid)
-                    .ok_or_else(|| MatrixError(format!("room not in state: {room}")))?
-            }
+        let target = if let Some(room) = self.client.get_room(&rid) {
+            room
+        } else {
+            self.client
+                .sync_once(SyncSettings::default())
+                .await
+                .map_err(|e| err("send pre-sync", e))?;
+            self.client
+                .get_room(&rid)
+                .ok_or_else(|| MatrixError(format!("room not in state: {room}")))?
         };
         let content = RoomMessageEventContent::text_plain(body);
         target

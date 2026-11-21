@@ -11,12 +11,14 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 // INVARIANT: example bins are CLI products; stdout/stderr are the surface.
 
-use std::time::Instant;
-
-use matrix_sdk::ruma::api::client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset};
-use matrix_sdk::ruma::OwnedUserId;
-use peregrine_core::adapter_matrix::MatrixSession;
-use peregrine_core::protocol::{ProtocolSession, RoomId};
+use matrix_sdk::ruma::{
+    OwnedUserId,
+    api::client::room::create_room::v3::{Request as CreateRoomRequest, RoomPreset},
+};
+use peregrine_core::{
+    adapter_matrix::MatrixSession,
+    protocol::{ProtocolSession, RoomId},
+};
 
 fn env(name: &str) -> Option<String> {
     match std::env::var(name) {
@@ -42,7 +44,6 @@ async fn main() {
         std::process::exit(2);
     });
 
-    let t0 = Instant::now();
     let home = env("HOME").unwrap_or_else(|| '.'.to_string());
     let safe: String = user
         .chars()
@@ -53,21 +54,22 @@ async fn main() {
     // Reuse the send_probe store (known-good device, no login churn).
     let session = match MatrixSession::restore(&hs, &path).await {
         Ok(s) => {
-            println!("restore ok  ({}ms)", t0.elapsed().as_millis());
+            println!("restore ok");
             s
         }
-        Err(_) => match MatrixSession::login(&hs, &user, &pass, "peregrine-send-probe", Some(&path))
-            .await
-        {
-            Ok(s) => {
-                println!("login   ok  (fresh device)");
-                s
+        Err(_) => {
+            match MatrixSession::login(&hs, &user, &pass, "peregrine-send-probe", Some(&path)).await
+            {
+                Ok(s) => {
+                    println!("login   ok  (fresh device)");
+                    s
+                }
+                Err(e) => {
+                    eprintln!("new_dm_probe: login failed: {e}");
+                    std::process::exit(2);
+                }
             }
-            Err(e) => {
-                eprintln!("new_dm_probe: login failed: {e}");
-                std::process::exit(2);
-            }
-        },
+        }
     };
 
     let mut req = CreateRoomRequest::new();
@@ -85,11 +87,7 @@ async fn main() {
             std::process::exit(3);
         })
         .unwrap_or_else(|()| unreachable!());
-    println!(
-        "room    ok  {} (invite sent to {peer}, {}ms)",
-        room.room_id(),
-        t0.elapsed().as_millis()
-    );
+    println!("room    ok  {} (invite sent to {peer})", room.room_id());
 
     if let Err(e) = room.enable_encryption().await {
         eprintln!("new_dm_probe: enable_encryption failed: {e}");
@@ -110,7 +108,7 @@ async fn main() {
     let rid = RoomId::new(room.room_id().as_str().to_owned());
     let body = "peregrine DM v2 — first message (accept the invite on your phone)";
     match session.send_message(&rid, body).await {
-        Ok(receipt) => println!("send    ok  txn={} ({}ms)", receipt.txn_id, t0.elapsed().as_millis()),
+        Ok(receipt) => println!("send    ok  txn={}", receipt.txn_id),
         Err(e) => {
             eprintln!("new_dm_probe: send failed: {e}");
             std::process::exit(4);

@@ -12,10 +12,10 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 // INVARIANT: example bins are CLI products; stdout/stderr are the surface.
 
-use std::time::Duration;
-
-use peregrine_core::adapter_matrix::MatrixSession;
-use peregrine_core::protocol::{ProtocolSession, RoomId};
+use peregrine_core::{
+    adapter_matrix::MatrixSession,
+    protocol::{ProtocolSession, RoomId},
+};
 
 fn env(name: &str) -> Option<String> {
     match std::env::var(name) {
@@ -41,9 +41,8 @@ async fn main() {
     });
     let body = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| format!("peregrine send_probe {}", chrono_now()));
+        .unwrap_or_else(|| "peregrine send_probe message".to_owned());
 
-    let t0 = std::time::Instant::now();
     let home = env("HOME").unwrap_or_else(|| '.'.to_string());
     let safe: String = user
         .chars()
@@ -55,7 +54,7 @@ async fn main() {
     let session = if sidecar.exists() {
         match MatrixSession::restore(&hs, &path).await {
             Ok(s) => {
-                println!("restore ok  ({}ms)", t0.elapsed().as_millis());
+                println!("restore ok");
                 s
             }
             Err(_) => fresh_login(&hs, &user, &pass, &path).await,
@@ -73,27 +72,21 @@ async fn main() {
             std::process::exit(3);
         })
         .ok();
-    println!("sync    ok  ({}ms)", t0.elapsed().as_millis());
+    println!("sync    ok");
 
     let rid = RoomId::new(room.clone());
     match session.send_message(&rid, &body).await {
         Ok(receipt) => {
-            println!("send    ok  txn={} body={body:?}", receipt.txn_id);
+            println!("send    ok  txn={}", receipt.txn_id);
         }
         Err(e) => {
             eprintln!("send_probe: send failed: {e}");
             std::process::exit(4);
         }
     }
-    let _ = Duration::from_secs(0);
 }
 
-async fn fresh_login(
-    hs: &str,
-    user: &str,
-    pass: &str,
-    path: &str,
-) -> MatrixSession {
+async fn fresh_login(hs: &str, user: &str, pass: &str, path: &str) -> MatrixSession {
     match MatrixSession::login(hs, user, pass, "peregrine-send-probe", Some(path)).await {
         Ok(s) => {
             println!("login   ok  (fresh device)");
@@ -104,11 +97,4 @@ async fn fresh_login(
             std::process::exit(2);
         }
     }
-}
-
-fn chrono_now() -> String {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs().to_string())
-        .unwrap_or_default()
 }
