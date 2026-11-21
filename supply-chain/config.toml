@@ -55,10 +55,6 @@ criteria = "safe-to-deploy"
 version = "1.1.2"
 criteria = "safe-to-deploy"
 
-[[exemptions.autocfg]]
-version = "1.5.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.aws-lc-rs]]
 version = "1.19.0"
 criteria = "safe-to-deploy"
@@ -76,19 +72,11 @@ version = "1.0.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.base64]]
-version = "0.22.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.base64]]
 version = "0.23.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.base64ct]]
 version = "1.8.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.bitflags]]
-version = "2.13.2"
 criteria = "safe-to-deploy"
 
 [[exemptions.blake3]]

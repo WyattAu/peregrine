@@ -36,3 +36,21 @@ who = "WyattAu agent audit (GLM-5.3-Flash)"
 criteria = "safe-to-deploy"
 version = "1.3.0"
 notes = "Zero unsafe. Pure proc-macro enum-newtype accessor from the ruma project itself. Trivially reviewable."
+
+[[audits.autocfg]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "1.5.1"
+notes = "Zero unsafe. Spawns `rustc` as its documented build-probe purpose (invoked only from consumers' build scripts). No network/fs beyond compile-time probes. Canonical (cuviper)."
+
+[[audits.base64]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "0.22.1"
+notes = "No build.rs. 4 unsafe mentions in documented simd/lookup fast paths. No network/process/fs surface. Ecosystem-canonical (marshallpierce)."
+
+[[audits.bitflags]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "2.13.2"
+notes = "No build.rs. 4 unsafe mentions in macro-generated flag accessors. No syscall surface. Canonical bitflags project."
