@@ -23,10 +23,6 @@ criteria = "safe-to-deploy"
 version = "0.9.4"
 criteria = "safe-to-deploy"
 
-[[exemptions.aho-corasick]]
-version = "1.1.5"
-criteria = "safe-to-deploy"
-
 [[exemptions.allocator-api2]]
 version = "0.2.21"
 criteria = "safe-to-deploy"
@@ -35,20 +31,12 @@ criteria = "safe-to-deploy"
 version = "0.1.6"
 criteria = "safe-to-deploy"
 
-[[exemptions.anyhow]]
-version = "1.0.104"
-criteria = "safe-to-deploy"
-
 [[exemptions.anymap2]]
 version = "0.13.0"
 criteria = "safe-to-deploy"
 
 [[exemptions.archery]]
 version = "1.2.3"
-criteria = "safe-to-deploy"
-
-[[exemptions.arrayvec]]
-version = "0.7.8"
 criteria = "safe-to-deploy"
 
 [[exemptions.as_variant]]

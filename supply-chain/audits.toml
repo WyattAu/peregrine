@@ -1,4 +1,20 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.aho-corasick]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "1.1.5"
+notes = "No build.rs. No network/process/fs surface. Unsafe limited to memchr-style dense-search fast paths (BurntSushi, ecosystem-canonical)."
+
+[[audits.anyhow]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "1.0.104"
+notes = "build.rs is the well-known unstable-backtrace feature probe (no codegen). No network/process/fs surface. Unsafe confined to documented backtrace paths. Ecosystem-canonical (dtolnay)."
+
+[[audits.arrayvec]]
+who = "WyattAu agent audit (GLM-5.3-Flash)"
+criteria = "safe-to-deploy"
+version = "0.7.8"
+notes = "No build.rs. No network/process/fs surface. Unsafe limited to capacity-checked array access paths; docs-verified invariants. Ecosystem-canonical."
