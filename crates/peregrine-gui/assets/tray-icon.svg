@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <!-- peregrine tray icon: falcon head in profile over a dark rounded square -->
+  <rect x="2" y="2" width="124" height="124" rx="26" ry="26" fill="#1b1e23"/>
+  <!-- falcon head: sweeping profile with beak -->
+  <path d="M 30 88
+           C 28 62, 40 40, 62 34
+           C 78 29, 96 32, 104 44
+           L 100 50
+           C 108 52, 112 56, 114 62
+           C 104 60, 96 60, 90 62
+           C 78 66, 60 66, 46 60
+           C 42 70, 40 80, 42 88
+           Z"
+        fill="#1b8cf0"/>
+  <!-- eye -->
+  <circle cx="72" cy="50" r="5" fill="#1b1e23"/>
+  <!-- beak accent -->
+  <path d="M 100 44 L 116 56 L 96 54 Z" fill="#7ee787"/>
+</svg>

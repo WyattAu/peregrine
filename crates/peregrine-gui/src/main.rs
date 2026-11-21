@@ -469,25 +469,17 @@ fn live(t0: Instant) {
     let _ = win.run();
 }
 
-/// Solid 32x32 RGBA tray icon (v0: peregrine teal square; a drawn
-/// falcon lands with the real icon set).
+/// Real falcon icon, 64x64 RGBA generated from assets/tray-icon.svg
+/// (inkscape render -> PIL resize -> const array in tray_icon_data.rs).
+mod tray_icon_data;
+
 fn tray_icon_rgba() -> tray_icon::Icon {
-    const W: u32 = 32;
-    const H: u32 = 32;
-    let mut rgba = Vec::with_capacity((W * H * 4) as usize);
-    for y in 0..H {
-        for x in 0..W {
-            // Rounded-corner mask so the square reads as an app icon.
-            let edge = (x < 3 || x >= W - 3) && (y < 3 || y >= H - 3);
-            let (r, g, b, a) = if edge {
-                (0, 0, 0, 0)
-            } else {
-                (0x1b, 0x8c, 0xf0, 0xff)
-            };
-            rgba.extend_from_slice(&[r, g, b, a]);
-        }
-    }
-    tray_icon::Icon::from_rgba(rgba, W, H).expect("tray icon: static RGBA")
+    tray_icon::Icon::from_rgba(
+        tray_icon_data::TRAY_ICON_RGBA.to_vec(),
+        64,
+        64,
+    )
+    .expect("tray icon: static RGBA")
 }
 
 fn build_tray(win: slint::Weak<SpikeWindow>) {
