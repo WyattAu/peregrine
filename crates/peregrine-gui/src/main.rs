@@ -302,6 +302,11 @@ fn live(t0: Instant) {
     // Bridge timer: tokio world -> Slint world.
     let unread: Rc<std::cell::RefCell<HashMap<String, usize>>> =
         Rc::new(std::cell::RefCell::new(HashMap::new()));
+    // Toast coalescing: last notification per room (millis). Mention
+    // log lines still fire per event; only toasts are rate-limited.
+    let last_toast: Rc<std::cell::RefCell<HashMap<String, u128>>> =
+        Rc::new(std::cell::RefCell::new(HashMap::new()));
+    const TOAST_WINDOW_MS: u128 = 60_000;
     let win_weak = win.as_weak();
     {
         let buffers = Rc::clone(&buffers);
@@ -312,6 +317,7 @@ fn live(t0: Instant) {
         let me = me.clone();
         let render_room = render_room.clone();
         let pending = Rc::clone(&pending);
+        let last_toast = Rc::clone(&last_toast);
         let t0c = t0;
         let mut first = true;
         let bridge = Timer::default();
@@ -371,6 +377,15 @@ fn live(t0: Instant) {
                                 {
                                     let room = u.room.as_str().to_owned();
                                     println!("mention  from {} in {}", u.sender, room);
+                                    let now_ms = t0.elapsed().as_millis();
+                                    let recent = last_toast
+                                        .borrow()
+                                        .get(&room)
+                                        .is_some_and(|t| now_ms.saturating_sub(*t) < TOAST_WINDOW_MS);
+                                    if recent {
+                                        continue;
+                                    }
+                                    last_toast.borrow_mut().insert(room.clone(), now_ms);
                                     let title = room_names.get(&room).cloned().unwrap_or(room.clone());
                                     let body = format!("{}: {}", u.sender, u.body);
                                     // Off the UI thread: freedesktop
