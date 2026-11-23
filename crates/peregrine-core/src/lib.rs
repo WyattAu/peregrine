@@ -13,6 +13,10 @@ pub mod window;
 
 #[cfg(feature = "matrix-sdk")]
 pub mod adapter_matrix;
+
+/// VoIP signaling (ADR 0003 stage 1) — media engine lands separately.
+#[cfg(feature = "matrix-sdk")]
+pub mod calls;
 #[cfg(feature = "matrix-sdk")]
 pub mod syncloop;
 

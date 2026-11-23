@@ -8,9 +8,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["matrix-sdk"]
+default = ["matrix-sdk", "calls"]
 # Protocol substrate behind a feature so DST-only consumers can build std-only.
 matrix-sdk = ["dep:matrix-sdk", "dep:url", "dep:tokio", "dep:futures-util"]
+calls = []
 
 [dependencies]
 futures-util = { workspace = true, optional = true }
