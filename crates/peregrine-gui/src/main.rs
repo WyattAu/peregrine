@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 use peregrine_core::adapter_matrix::MatrixSession;
 use peregrine_core::protocol::{ProtocolSession, RoomId, TimelineUpdate};
 use peregrine_core::syncloop::{LoopCfg, LoopEvent, spawn_sync_loop};
-use slint::{ComponentHandle, Model, ModelRc, Timer, TimerMode, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 slint::include_modules!();
 
@@ -63,6 +63,8 @@ fn main() {
 enum GuiEvent {
     /// Decrypted timeline updates from the sync loop.
     Updates(Vec<TimelineUpdate>),
+    /// Connection-state text for the header bar.
+    Status(&'static str),
     /// A backward history page for one room (oldest first).
     History {
         room: String,
@@ -200,15 +202,18 @@ fn live(t0: Instant) {
         loop {
             match handle.next_event().await {
                 Some(LoopEvent::Tick { updates, .. }) => {
+                    let _ = tx.send(GuiEvent::Status("connected"));
                     if !updates.is_empty() {
                         let _ = tx.send(GuiEvent::Updates(updates));
                     }
                 }
                 Some(LoopEvent::Backoff { error, .. }) => {
+                    let _ = tx.send(GuiEvent::Status("reconnecting"));
                     eprintln!("loop backoff: {error}");
                 }
                 Some(_) => {}
                 None => {
+                    let _ = tx.send(GuiEvent::Status("offline"));
                     let _ = tx.send(GuiEvent::Fatal("sync loop ended".into()));
                     return;
                 }
@@ -334,6 +339,11 @@ fn live(t0: Instant) {
                 }
                 while let Ok(ev) = rx.try_recv() {
                     match ev {
+                        GuiEvent::Status(text) => {
+                            if let Some(w) = win_weak.upgrade() {
+                                w.set_status_line(text.into());
+                            }
+                        }
                         GuiEvent::History {
                             room,
                             updates,
@@ -526,6 +536,16 @@ fn build_tray(win: slint::Weak<SpikeWindow>) {
     std::mem::forget(pump); // must outlive the callback borrows
 }
 
+fn short_sender(mxid: &str) -> SharedString {
+    // Display name: localpart without the sigil/domain ("wyattau").
+    let localpart = mxid
+        .trim_start_matches('@')
+        .split(':')
+        .next()
+        .unwrap_or(mxid);
+    localpart.to_owned().into()
+}
+
 fn to_item(u: &TimelineUpdate, me_mxid: &str) -> TimelineItem {
     // Mention heuristic mirrors the TUI rule v0: other senders calling
     // @room or our localpart (mxid comparison, not the bare env name).
@@ -538,7 +558,7 @@ fn to_item(u: &TimelineUpdate, me_mxid: &str) -> TimelineItem {
     let mention = u.sender.as_str() != me_mxid
         && (u.body.contains("@room") || u.body.contains(&at_localpart));
     TimelineItem {
-        sender: u.sender.clone().into(),
+        sender: short_sender(u.sender.as_str()),
         body: u.body.clone().into(),
         mention,
     }
